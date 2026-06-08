@@ -139,19 +139,10 @@
             scene.add(startPlatform);
             colliders.push(startPlatform);
 
-            // プレイヤーアバター
-            playerMesh = new THREE.Group();
-            const bodyGeo = new THREE.BoxGeometry(playerSize.x, playerSize.y, playerSize.z);
-            const bodyMat = new THREE.MeshLambertMaterial({ color: 0x00bcd4 });
-            const body = new THREE.Mesh(bodyGeo, bodyMat);
-            playerMesh.add(body);
-
-            // 目の追加（進行方向の目印）
-            const eyeGeo = new THREE.BoxGeometry(14, 4, 2);
-            const eyeMat = new THREE.MeshBasicMaterial({ color: 0x222222 });
-            const eyes = new THREE.Mesh(eyeGeo, eyeMat);
-            eyes.position.set(0, 10, playerSize.z / 2); 
-            playerMesh.add(eyes);
+            // プレイヤーアバター（シンプルなキューブに戻しました）
+            const playerGeo = new THREE.BoxGeometry(playerSize.x, playerSize.y, playerSize.z);
+            const playerMat = new THREE.MeshLambertMaterial({ color: 0x00bcd4 });
+            playerMesh = new THREE.Mesh(playerGeo, playerMat);
 
             playerMesh.position.copy(playerPos);
             scene.add(playerMesh);
@@ -238,14 +229,11 @@
             if (input.left) { moveX -= camRight.x; moveZ -= camRight.z; }
             if (input.right) { moveX += camRight.x; moveZ += camRight.z; }
 
-            // 移動とキャラクターの回転
+            // 移動速度の適用（キャラクターを回転させる処理を削除）
             if (moveX !== 0 || moveZ !== 0) {
                 const moveLen = Math.sqrt(moveX * moveX + moveZ * moveZ);
                 playerVelocity.x = (moveX / moveLen) * MOVE_SPEED;
                 playerVelocity.z = (moveZ / moveLen) * MOVE_SPEED;
-
-                // 進行方向に向く
-                playerMesh.rotation.y = Math.atan2(playerVelocity.x, playerVelocity.z);
             } else {
                 playerVelocity.x = 0;
                 playerVelocity.z = 0;
