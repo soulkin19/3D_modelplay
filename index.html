@@ -1,0 +1,446 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>3D World Player - Athletic Mode</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #111; color: white; font-family: sans-serif; touch-action: none; user-select: none; }
+        canvas { display: block; }
+        
+        /* 上部ファイルインポートUI */
+        #menu-container {
+            position: absolute;
+            top: 15px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 10px;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 12px;
+            border-radius: 10px;
+            pointer-events: auto;
+            z-index: 10;
+        }
+        label, button {
+            padding: 10px 16px;
+            font-size: 14px;
+            font-weight: bold;
+            color: #fff;
+            background: #e91e63;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            text-align: center;
+        }
+        label { background: #2196F3; }
+        button.retry-btn { background: #ff9800; }
+        input[type="file"] { display: none; }
+
+        /* iPad用タッチコントローラーUI */
+        .touch-overlay {
+            position: absolute;
+            bottom: 30px;
+            width: 100%;
+            display: flex;
+            justify-content: space-between;
+            padding: 0 40px;
+            box-sizing: border-box;
+            pointer-events: none;
+            z-index: 10;
+        }
+        .dpad {
+            display: grid;
+            grid-template-columns: repeat(3, 50px);
+            grid-template-rows: repeat(3, 50px);
+            gap: 5px;
+            pointer-events: auto;
+        }
+        .dpad-btn {
+            background: rgba(255, 255, 255, 0.2);
+            border: 2px solid rgba(255, 255, 255, 0.4);
+            border-radius: 8px;
+            color: white;
+            font-size: 18px;
+            font-weight: bold;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .dpad-btn:active { background: rgba(255, 255, 255, 0.5); }
+        .action-container {
+            display: flex;
+            align-items: flex-end;
+            pointer-events: auto;
+        }
+        .jump-btn {
+            width: 80px;
+            height: 80px;
+            background: rgba(233, 30, 99, 0.4);
+            border: 3px solid rgba(233, 30, 99, 0.7);
+            border-radius: 50%;
+            color: white;
+            font-size: 16px;
+            font-weight: bold;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .jump-btn:active { background: rgba(233, 30, 99, 0.8); }
+
+        /* 操作説明 */
+        #instructions {
+            position: absolute;
+            top: 85px;
+            left: 15px;
+            background: rgba(0,0,0,0.5);
+            padding: 10px;
+            border-radius: 6px;
+            font-size: 12px;
+            line-height: 1.5;
+            pointer-events: none;
+        }
+    </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+</head>
+<body>
+
+    <div id="menu-container">
+        <label for="sou-input">.sou ワールド読込</label>
+        <input type="file" id="sou-input" accept=".sou">
+        
+        <label for="gltf-input" style="background:#e91e63;">.gltf ワールド読込</label>
+        <input type="file" id="gltf-input" accept=".gltf">
+
+        <button class="retry-btn" id="retry-btn">リトライ (R)</button>
+    </div>
+
+    <div id="instructions">
+        <strong>【操作方法】</strong><br>
+        ・移動: WASD / 矢印キー / 画面左パッド<br>
+        ・ジャンプ: Spaceキー / 画面右JUMPボタン<br>
+        ・カメラ回転: 画面をドラッグ / スワイプ<br>
+        ・リトライ: Rキー / 上部ボタン (下に落ちたら押そう)
+    </div>
+
+    <div class="touch-overlay">
+        <div class="dpad">
+            <div></div>
+            <div class="dpad-btn" id="pad-up">▲</div>
+            <div></div>
+            <div class="dpad-btn" id="pad-left">◀</div>
+            <div></div>
+            <div class="dpad-btn" id="pad-right">▶</div>
+            <div></div>
+            <div class="dpad-btn" id="pad-down">▼</div>
+            <div></div>
+        </div>
+        <div class="action-container">
+            <div class="jump-btn" id="pad-jump">JUMP</div>
+        </div>
+    </div>
+
+    <script>
+        let scene, camera, renderer, controls;
+        let colliders = []; // 衝突判定用の対象オブジェクト配列
+        
+        // プレイヤー物理パラメータ
+        let playerMesh;
+        const playerSize = { x: 24, y: 40, z: 24 };
+        let playerPos = new THREE.Vector3(0, 100, 0);
+        let playerVelocity = new THREE.Vector3(0, 0, 0);
+        let isGrounded = false;
+        
+        const GRAVITY = -0.6;
+        const JUMP_FORCE = 12;
+        const MOVE_SPEED = 4;
+
+        // キーボード・タッチ入力状態管理
+        const input = { forward: false, backward: false, left: false, right: false, jump: false };
+
+        init();
+        animate();
+
+        function init() {
+            // シーン
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0xa0b0ff); // 青空風の背景
+            scene.fog = new THREE.FogExp2(0xa0b0ff, 0.0007);
+
+            // カメラ
+            camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 1, 5000);
+            camera.position.set(0, 150, 300);
+
+            // ライティング
+            const ambientLight = new THREE.AmbientLight(0x777777);
+            scene.add(ambientLight);
+            const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            dirLight.position.set(200, 400, 200);
+            scene.add(dirLight);
+
+            // 初期用のスタート土台
+            const startGeo = new THREE.BoxGeometry(200, 20, 200);
+            const startMat = new THREE.MeshLambertMaterial({ color: 0x888888 });
+            const startPlatform = new THREE.Mesh(startGeo, startMat);
+            startPlatform.position.set(0, -10, 0);
+            scene.add(startPlatform);
+            colliders.push(startPlatform);
+
+            // プレイヤーアバター (三人称視点用に見える化)
+            const playerGeo = new THREE.BoxGeometry(playerSize.x, playerSize.y, playerSize.z);
+            const playerMat = new THREE.MeshLambertMaterial({ color: 0x00bcd4 });
+            playerMesh = new THREE.Mesh(playerGeo, playerMat);
+            playerMesh.position.copy(playerPos);
+            scene.add(playerMesh);
+
+            // レンダラー
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            document.body.appendChild(renderer.domElement);
+
+            // カメラコントロール (プレイヤー追従ベース)
+            controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.1;
+            controls.minDistance = 100;
+            controls.maxDistance = 600;
+            controls.enablePan = false; // 平行移動は禁止
+
+            // イベント登録
+            window.addEventListener('resize', onWindowResize);
+            window.addEventListener('keydown', (e) => handleKeyEvent(e, true));
+            window.addEventListener('keyup', (e) => handleKeyEvent(e, false));
+
+            // インポート処理イベント
+            document.getElementById('sou-input').addEventListener('change', loadSouWorld);
+            document.getElementById('gltf-input').addEventListener('change', loadGltfWorld);
+            document.getElementById('retry-btn').addEventListener('click', resetPlayer);
+
+            setupTouchControls();
+        }
+
+        // iPad用タッチコントロールのイベント設定
+        function setupTouchControls() {
+            const bindTouch = (id, prop) => {
+                const btn = document.getElementById(id);
+                btn.addEventListener('pointerdown', (e) => { e.preventDefault(); input[prop] = true; });
+                btn.addEventListener('pointerup', (e) => { e.preventDefault(); input[prop] = false; });
+                btn.addEventListener('pointerleave', (e) => { e.preventDefault(); input[prop] = false; });
+            };
+            bindTouch('pad-up', 'forward');
+            bindTouch('pad-down', 'backward');
+            bindTouch('pad-left', 'left');
+            bindTouch('pad-right', 'right');
+            bindTouch('pad-jump', 'jump');
+        }
+
+        function handleKeyEvent(event, isDown) {
+            switch (event.key.toLowerCase()) {
+                case 'w': case 'arrowup': input.forward = isDown; break;
+                case 's': case 'arrowdown': input.backward = isDown; break;
+                case 'a': case 'arrowleft': input.left = isDown; break;
+                case 'd': case 'arrowright': input.right = isDown; break;
+                case ' ': input.jump = isDown; break;
+                case 'r': if (isDown) resetPlayer(); break;
+            }
+        }
+
+        // 軸別AABB衝突判定システム
+        function isColliding(pos) {
+            let pMinX = pos.x - playerSize.x / 2;
+            let pMaxX = pos.x + playerSize.x / 2;
+            let pMinY = pos.y - playerSize.y / 2;
+            let pMaxY = pos.y + playerSize.y / 2;
+            let pMinZ = pos.z - playerSize.z / 2;
+            let pMaxZ = pos.z + playerSize.z / 2;
+
+            for (let i = 0; i < colliders.length; i++) {
+                let obj = colliders[i];
+                let box = new THREE.Box3().setFromObject(obj);
+                
+                if (pMinX < box.max.x && pMaxX > box.min.x &&
+                    pMinY < box.max.y && pMaxY > box.min.y &&
+                    pMinZ < box.max.z && pMaxZ > box.min.z) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        function updatePhysics() {
+            // カメラの向き基準で移動ベクトルを計算
+            const camHeading = new THREE.Vector3();
+            camera.getWorldDirection(camHeading);
+            camHeading.y = 0;
+            camHeading.normalize();
+
+            const camRight = new THREE.Vector3();
+            camRight.crossVectors(camHeading, camera.up).normalize().negate();
+
+            let moveX = 0;
+            let moveZ = 0;
+
+            if (input.forward) { moveX += camHeading.x; moveZ += camHeading.z; }
+            if (input.backward) { moveX -= camHeading.x; moveZ -= camHeading.z; }
+            if (input.left) { moveX -= camRight.x; moveZ -= camRight.z; }
+            if (input.right) { moveX += camRight.x; moveZ += camRight.z; }
+
+            // 速度の適用
+            if (moveX !== 0 || moveZ !== 0) {
+                const moveLen = Math.sqrt(moveX * moveX + moveZ * moveZ);
+                playerVelocity.x = (moveX / moveLen) * MOVE_SPEED;
+                playerVelocity.z = (moveZ / moveLen) * MOVE_SPEED;
+            } else {
+                playerVelocity.x = 0;
+                playerVelocity.z = 0;
+            }
+
+            // 重力
+            playerVelocity.y += GRAVITY;
+
+            // ジャンプ処理
+            if (input.jump && isGrounded) {
+                playerVelocity.y = JUMP_FORCE;
+                isGrounded = false;
+            }
+
+            // --- 衝突判定つき位置更新（X, Z, Y を独立して判定） ---
+            
+            // X軸移動
+            playerPos.x += playerVelocity.x;
+            if (isColliding(playerPos)) {
+                playerPos.x -= playerVelocity.x;
+                playerVelocity.x = 0;
+            }
+
+            // Z軸移動
+            playerPos.z += playerVelocity.z;
+            if (isColliding(playerPos)) {
+                playerPos.z -= playerVelocity.z;
+                playerVelocity.z = 0;
+            }
+
+            // Y軸移動
+            isGrounded = false;
+            playerPos.y += playerVelocity.y;
+            if (isColliding(playerPos)) {
+                if (playerVelocity.y < 0) {
+                    isGrounded = true; // 下方向への衝突なら接地
+                }
+                playerPos.y -= playerVelocity.y;
+                playerVelocity.y = 0;
+            }
+
+            // アバターへの座標反映
+            playerMesh.position.copy(playerPos);
+
+            // 奈落（はるか下空）に落ちたら自動リトライ
+            if (playerPos.y < -400) {
+                resetPlayer();
+            }
+        }
+
+        function resetPlayer() {
+            playerPos.set(0, 100, 0);
+            playerVelocity.set(0, 0, 0);
+            isGrounded = false;
+        }
+
+        // --- ワールドインポート処理 ---
+
+        // モデラーから出力した .sou (JSON座標) を読み込んでアスレチックステージ化
+        function loadSouWorld(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const loadedData = JSON.parse(e.target.result);
+                    clearCurrentWorld();
+
+                    const cubeGeo = new THREE.BoxGeometry(50, 50, 50);
+
+                    loadedData.forEach(data => {
+                        const mat = new THREE.MeshLambertMaterial({ color: data.color });
+                        const voxel = new THREE.Mesh(cubeGeo, mat);
+                        voxel.position.set(data.x, data.y, data.z);
+                        scene.add(voxel);
+                        colliders.push(voxel); // 衝突判定対象にする
+                    });
+                    resetPlayer();
+                } catch (error) {
+                    alert('.souファイルの読み込みに失敗しました。');
+                }
+            };
+            reader.readAsText(file);
+            event.target.value = '';
+        }
+
+        // モデラーから出力した最適化 .gltf を読み込んでアスレチックステージ化
+        function loadGltfWorld(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const contents = e.target.result;
+                const loader = new THREE.GLTFLoader();
+                clearCurrentWorld();
+
+                loader.parse(contents, '', function(gltf) {
+                    const loadedGroup = gltf.scene;
+                    scene.add(loadedGroup);
+
+                    // 内包される全てのMeshをコリジョン対象へ登録
+                    loadedGroup.traverse(function(child) {
+                        if (child.isMesh) {
+                            // 安定したAABB判定のためにマテリアルの陰影プロパティを再調整
+                            if(child.material) child.material.roughness = 0.8;
+                            colliders.push(child);
+                        }
+                    });
+                    resetPlayer();
+                }, function(error) {
+                    alert('.gltfファイルの展開に失敗しました。');
+                });
+            };
+            reader.readAsText(file);
+            event.target.value = '';
+        }
+
+        // 初期ステージ以外の動的オブジェクトをクリーンアップ
+        function clearCurrentWorld() {
+            colliders.forEach(obj => {
+                if (obj.geometry.type !== "BoxGeometry" || obj.geometry.parameters.width !== 200) {
+                    scene.remove(obj);
+                }
+            });
+            // 初期土台だけ残す
+            colliders = [colliders[0]];
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+
+            // 物理演算と座標更新
+            updatePhysics();
+
+            // カメラコントロールの注視点を常にプレイヤーに固定 (三人称追従)
+            controls.target.copy(playerPos);
+            controls.update();
+
+            renderer.render(scene, camera);
+        }
+    </script>
+</body>
+</html>
