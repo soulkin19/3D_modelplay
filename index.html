@@ -2,363 +2,507 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>3D World Player - Athletic Mode</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>プロスピ風 バッティング再現ゲーム</title>
     <style>
-        body { 
-            margin: 0; overflow: hidden; background-color: #111; color: white; 
-            font-family: sans-serif; touch-action: none; user-select: none; -webkit-user-select: none; 
+        body {
+            margin: 0;
+            background-color: #111;
+            color: #fff;
+            font-family: 'Helvetica Neue', Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            overflow: hidden;
+            user-select: none;
         }
-        canvas { display: block; }
-        
-        #menu-container {
-            position: absolute; top: 15px; left: 50%; transform: translateX(-50%);
-            display: flex; gap: 10px; background: rgba(0, 0, 0, 0.7);
-            padding: 12px; border-radius: 10px; pointer-events: auto; z-index: 10;
-        }
-        label, button {
-            padding: 10px 16px; font-size: 14px; font-weight: bold; color: #fff;
-            background: #e91e63; border: none; border-radius: 6px; cursor: pointer; text-align: center;
-        }
-        label { background: #2196F3; }
-        button.retry-btn { background: #ff9800; }
-        input[type="file"] { display: none; }
 
-        .touch-overlay {
-            position: absolute; bottom: 30px; width: 100%; display: flex;
-            justify-content: space-between; padding: 0 40px; box-sizing: border-box;
-            pointer-events: none; z-index: 10;
+        #game-container {
+            position: relative;
+            width: 800px;
+            height: 600px;
+            border: 4px solid #d4af37; /* プロスピ風ゴールド */
+            box-shadow: 0 0 20px rgba(212, 175, 55, 0.5);
+            background: linear-gradient(to bottom, #1a3c1a 0%, #0d200d 100%);
+            cursor: none; /* ゲーム画面内では標準カーソルを消す */
         }
-        .dpad {
-            display: grid; grid-template-columns: repeat(3, 50px); grid-template-rows: repeat(3, 50px);
-            gap: 5px; pointer-events: auto;
-        }
-        .dpad-btn {
-            background: rgba(255, 255, 255, 0.2); border: 2px solid rgba(255, 255, 255, 0.4);
-            border-radius: 8px; color: white; font-size: 18px; font-weight: bold;
-            display: flex; align-items: center; justify-content: center;
-        }
-        .dpad-btn:active { background: rgba(255, 255, 255, 0.5); }
-        
-        .action-container { display: flex; align-items: flex-end; pointer-events: auto; }
-        .jump-btn {
-            width: 80px; height: 80px; background: rgba(233, 30, 99, 0.4);
-            border: 3px solid rgba(233, 30, 99, 0.7); border-radius: 50%;
-            color: white; font-size: 16px; font-weight: bold;
-            display: flex; align-items: center; justify-content: center;
-        }
-        .jump-btn:active { background: rgba(233, 30, 99, 0.8); }
 
-        #instructions {
-            position: absolute; top: 85px; left: 15px; background: rgba(0,0,0,0.5);
-            padding: 10px; border-radius: 6px; font-size: 12px; line-height: 1.5; pointer-events: none;
+        canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+        }
+
+        #ui-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+
+        .hud-top {
+            display: flex;
+            justify-content: space-between;
+            width: 100%;
+        }
+
+        .score-board {
+            background: rgba(0, 0, 0, 0.7);
+            border: 2px solid #555;
+            padding: 10px 20px;
+            border-radius: 5px;
+            font-size: 18px;
+            font-weight: bold;
+        }
+
+        .pitch-info {
+            background: rgba(0, 0, 0, 0.8);
+            border-left: 5px solid #ffcc00;
+            padding: 10px 15px;
+            font-size: 20px;
+            font-weight: bold;
+            text-shadow: 1px 1px 2px #000;
+            transform: skewX(-10deg);
+        }
+
+        #result-display {
+            position: absolute;
+            top: 40%;
+            left: 50%;
+            transform: translate(-50%, -50%) scale(0.5);
+            font-size: 64px;
+            font-weight: 900;
+            font-style: italic;
+            text-shadow: 3px 3px 0px #000, -3px -3px 0px #000, 3px -3px 0px #000, -3px 3px 0px #000, 0px 5px 10px rgba(0,0,0,0.8);
+            opacity: 0;
+            transition: all 0.15s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            z-index: 10;
+        }
+
+        #result-display.show {
+            opacity: 1;
+            transform: translate(-50%, -50%) scale(1);
+        }
+
+        /* 判定ごとのカラー */
+        .res-homerun { color: #ff3333; animation: flash 0.3s infinite; }
+        .res-hit { color: #ffcc00; }
+        .res-foul { color: #cccccc; }
+        .res-strike { color: #3399ff; }
+        .res-out { color: #999999; }
+
+        @keyframes flash {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+
+        #start-screen {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.85);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 20;
+            cursor: default;
+        }
+
+        .btn {
+            background: linear-gradient(to bottom, #d4af37, #aa820a);
+            border: none;
+            color: black;
+            padding: 15px 40px;
+            font-size: 22px;
+            font-weight: bold;
+            border-radius: 30px;
+            cursor: pointer;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.4);
+            transition: transform 0.1s;
+        }
+        .btn:hover { transform: scale(1.05); }
+
+        .controls-desc {
+            margin-top: 20px;
+            font-size: 14px;
+            color: #aaa;
+            text-align: center;
+            line-height: 1.6;
         }
     </style>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
 </head>
 <body>
 
-    <div id="menu-container">
-        <label for="sou-input">.sou 読込</label>
-        <input type="file" id="sou-input" accept=".sou">
-        
-        <label for="gltf-input" style="background:#e91e63;">.gltf 読込</label>
-        <input type="file" id="gltf-input" accept=".gltf">
-
-        <button class="retry-btn" id="retry-btn">リトライ(R)</button>
-    </div>
-
-    <div id="instructions">
-        <strong>【操作方法】</strong><br>
-        ・移動: WASD / 矢印 / 左パッド<br>
-        ・ジャンプ: Space / 右ボタン<br>
-        ・カメラ: 画面ドラッグ<br>
-        ・リトライ: Rキー / 上部ボタン
-    </div>
-
-    <div class="touch-overlay">
-        <div class="dpad">
-            <div></div><div class="dpad-btn" id="pad-up">▲</div><div></div>
-            <div class="dpad-btn" id="pad-left">◀</div><div></div><div class="dpad-btn" id="pad-right">▶</div>
-            <div></div><div class="dpad-btn" id="pad-down">▼</div><div></div>
-        </div>
-        <div class="action-container">
-            <div class="jump-btn" id="pad-jump">JUMP</div>
+<div id="game-container">
+    <canvas id="gameCanvas" width="800" height="600"></canvas>
+    
+    <div id="ui-layer">
+        <div class="hud-top">
+            <div class="score-board">
+                SCORE: <span id="score">0</span> | QUICK STREAK: <span id="streak">0</span>
+            </div>
+            <div class="pitch-info" id="pitch-announce" style="display:none;">
+                ストレート (152km/h)
+            </div>
         </div>
     </div>
 
-    <script>
-        // --- 画面のズーム・ダブルタップ拡大を完全に防止 ---
-        document.addEventListener('dblclick', function(e) { e.preventDefault(); }, { passive: false });
-        let lastTouchEnd = 0;
-        document.addEventListener('touchend', function(e) {
-            let now = (new Date()).getTime();
-            if (now - lastTouchEnd <= 300) e.preventDefault();
-            lastTouchEnd = now;
-        }, { passive: false });
+    <div id="result-display">HOMERUN!!</div>
 
-        let scene, camera, renderer, controls;
-        let colliders = []; 
-        
-        let playerMesh;
-        const playerSize = { x: 24, y: 40, z: 24 };
-        let playerPos = new THREE.Vector3(0, 100, 0);
-        let playerVelocity = new THREE.Vector3(0, 0, 0);
-        let isGrounded = false;
-        
-        const GRAVITY = -0.6;
-        const JUMP_FORCE = 12;
-        const MOVE_SPEED = 5;
+    <div id="start-screen">
+        <h1 style="color: #d4af37; font-size: 42px; margin-bottom: 5px; text-style: italic;">PROSPI HTML-REMAKE</h1>
+        <p style="color: #ccc; margin-bottom: 30px;">~ リアルタイム・バッティングシステム ~</p>
+        <button class="btn" onclick="startGame()">PLAY BALL</button>
+        <div class="controls-desc">
+            【操作方法】<br>
+            マウス移動：ミートカーソルの移動<br>
+            左クリック：スイング（タイミングを合わせろ！）<br>
+            <span style="color: #ffcc00;">※中心の白い「芯」で捉えると打球スピードが上がりホームラン確率がUPします。</span>
+        </div>
+    </div>
+</div>
 
-        const input = { forward: false, backward: false, left: false, right: false, jump: false };
+<script>
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
 
-        init();
-        animate();
+// ゲーム状態
+let gameActive = false;
+let score = 0;
+let streak = 0;
+let mouseX = 400;
+let mouseY = 450;
 
-        function init() {
-            scene = new THREE.Scene();
-            scene.background = new THREE.Color(0xa0b0ff); 
-            scene.fog = new THREE.FogExp2(0xa0b0ff, 0.0007);
+// ピッチャーとストライクゾーンの座標設定
+const PITCHER_X = 400;
+const PITCHER_Y = 180;
+const ZONE_X = 320;
+const ZONE_Y = 380;
+const ZONE_W = 160;
+const ZONE_H = 160;
 
-            camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 1, 5000);
-            camera.position.set(0, 150, 300);
+// 球種データ定義
+const PITCH_TYPES = [
+    { name: 'ストレート', speed: 153, color: '#ffffff', type: 'straight' },
+    { name: 'スライダー', speed: 138, color: '#33ccff', type: 'slider' },
+    { name: 'フォーク', speed: 141, color: '#ff6633', type: 'fork' },
+    { name: 'カットボール', speed: 147, color: '#99ff33', type: 'cut' }
+];
 
-            const ambientLight = new THREE.AmbientLight(0x777777);
-            scene.add(ambientLight);
-            const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
-            dirLight.position.set(200, 400, 200);
-            scene.add(dirLight);
+// ボールオブジェクト
+let ball = {
+    x: PITCHER_X,
+    y: PITCHER_Y,
+    size: 4,
+    vx: 0,
+    vy: 0,
+    active: false,
+    progress: 0, // 0から1へ進む投球進行度
+    currentPitch: PITCH_TYPES[0],
+    actualSpeed: 0,
+    hasSwung: false,
+    targetX: 400, // 最終到達予測点
+    targetY: 450
+};
 
-            // 初期リスポーン地点の土台
-            const startGeo = new THREE.BoxGeometry(200, 20, 200);
-            const startMat = new THREE.MeshLambertMaterial({ color: 0x888888 });
-            const startPlatform = new THREE.Mesh(startGeo, startMat);
-            startPlatform.position.set(0, -10, 0);
-            scene.add(startPlatform);
-            colliders.push(startPlatform);
+// マウス移動イベント
+canvas.addEventListener('mousemove', (e) => {
+    const rect = canvas.getBoundingClientRect();
+    mouseX = e.clientX - rect.left;
+    mouseY = e.clientY - rect.top;
+    
+    // カーソル移動制限（バッターボックス付近のみ）
+    if(mouseX < 200) mouseX = 200;
+    if(mouseX > 600) mouseX = 600;
+    if(mouseY < 300) mouseY = 300;
+    if(mouseY > 550) mouseY = 550;
+});
 
-            // プレイヤーアバター
-            const playerGeo = new THREE.BoxGeometry(playerSize.x, playerSize.y, playerSize.z);
-            const playerMat = new THREE.MeshLambertMaterial({ color: 0x00bcd4 });
-            playerMesh = new THREE.Mesh(playerGeo, playerMat);
+// スイング（クリック）イベント
+canvas.addEventListener('mousedown', (e) => {
+    if (!gameActive || !ball.active || ball.hasSwung) return;
+    evaluateSwing();
+});
 
-            playerMesh.position.copy(playerPos);
-            scene.add(playerMesh);
+function startGame() {
+    document.getElementById('start-screen').style.display = 'none';
+    gameActive = true;
+    score = 0;
+    streak = 0;
+    document.getElementById('score').innerText = score;
+    document.getElementById('streak').innerText = streak;
+    nextPitch();
+    animate();
+}
 
-            renderer = new THREE.WebGLRenderer({ antialias: true });
-            renderer.setPixelRatio(window.devicePixelRatio);
-            renderer.setSize(window.innerWidth, window.innerHeight);
-            document.body.appendChild(renderer.domElement);
+function nextPitch() {
+    // 判定表示をリセット
+    const resDisp = document.getElementById('result-display');
+    resDisp.className = '';
+    
+    // ランダムな球種とコースの決定
+    const pitchConfig = PITCH_TYPES[Math.floor(Math.random() * PITCH_TYPES.length)];
+    const speedVariation = Math.floor(Math.random() * 6) - 3; // ±3km/hのブレ
+    
+    ball.currentPitch = pitchConfig;
+    ball.actualSpeed = pitchConfig.speed + speedVariation;
+    ball.x = PITCHER_X;
+    ball.y = PITCHER_Y;
+    ball.size = 4;
+    ball.progress = 0;
+    ball.hasSwung = false;
+    
+    // ストライクゾーン中心＋ランダムな散らばり（プロスピのコース決定）
+    ball.targetX = ZONE_X + (ZONE_W * 0.1) + Math.random() * (ZONE_W * 0.8);
+    ball.targetY = ZONE_Y + (ZONE_H * 0.1) + Math.random() * (ZONE_H * 0.8);
 
-            // カメラコントローラー
-            controls = new THREE.OrbitControls(camera, renderer.domElement);
-            controls.enableDamping = true;
-            controls.dampingFactor = 0.1;
-            controls.minDistance = 100;
-            controls.maxDistance = 600;
-            controls.enablePan = false; 
-            controls.enableKeys = false; // ★ここが原因！矢印キーによるカメラの回転・移動を無効化
+    // 球種アナウンスの表示
+    const announce = document.getElementById('pitch-announce');
+    announce.innerText = `${pitchConfig.name} (${ball.actualSpeed}km/h)`;
+    announce.style.display = 'block';
 
-            window.addEventListener('resize', onWindowResize);
-            window.addEventListener('keydown', (e) => handleKeyEvent(e, true));
-            window.addEventListener('keyup', (e) => handleKeyEvent(e, false));
+    // 1秒後に投球開始
+    setTimeout(() => {
+        ball.active = true;
+    }, 1000);
+}
 
-            document.getElementById('sou-input').addEventListener('change', loadSouWorld);
-            document.getElementById('gltf-input').addEventListener('change', loadGltfWorld);
-            document.getElementById('retry-btn').addEventListener('click', resetPlayer);
+// 描画ループ
+function animate() {
+    if (!gameActive) return;
+    
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    
+    drawBackground();
+    drawStrikeZone();
+    
+    if (ball.active) {
+        updateBall();
+        drawBall();
+    }
+    
+    drawMeetCursor();
+    
+    requestAnimationFrame(animate);
+}
 
-            setupTouchControls();
+// 背景（球場イメージ）の描画
+function drawBackground() {
+    // マウンド
+    ctx.fillStyle = '#6d5339';
+    ctx.beginPath();
+    ctx.ellipse(PITCHER_X, PITCHER_Y + 10, 40, 15, 0, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // ピッチャープレート
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(PITCHER_X - 15, PITCHER_Y + 5, 30, 4);
+
+    // バッターボックスライン（簡易）
+    ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+    ctx.lineWidth = 3;
+    ctx.strokeRect(ZONE_X - 60, ZONE_Y - 20, 50, ZONE_H + 40); // 左打席
+    ctx.strokeRect(ZONE_X + ZONE_W + 10, ZONE_Y - 20, 50, ZONE_H + 40); // 右打席
+}
+
+// プロスピ風ストライクゾーンの描画
+function drawStrikeZone() {
+    // 外枠
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(ZONE_X, ZONE_Y, ZONE_W, ZONE_H);
+    
+    // 内枠（プロスピの9分割ラインを薄く描画）
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
+    ctx.lineWidth = 1;
+    // 縦2本
+    ctx.beginPath();
+    ctx.moveTo(ZONE_X + ZONE_W/3, ZONE_Y); ctx.lineTo(ZONE_X + ZONE_W/3, ZONE_Y + ZONE_H);
+    ctx.moveTo(ZONE_X + (ZONE_W/3)*2, ZONE_Y); ctx.lineTo(ZONE_X + (ZONE_W/3)*2, ZONE_Y + ZONE_H);
+    // 横2本
+    ctx.moveTo(ZONE_X, ZONE_Y + ZONE_H/3); ctx.lineTo(ZONE_X + ZONE_W, ZONE_Y + ZONE_H/3);
+    ctx.moveTo(ZONE_X, ZONE_Y + (ZONE_H/3)*2); ctx.lineTo(ZONE_X + ZONE_W, ZONE_Y + (ZONE_H/3)*2);
+    ctx.stroke();
+}
+
+// ボールの物理挙動（プロスピの球種変化をシミュレート）
+function updateBall() {
+    // 球速に応じたフレームごとの進行度（ストレートは速く、フォークは後半失速など）
+    let speedFactor = (ball.actualSpeed / 150) * 0.016; 
+    ball.progress += speedFactor;
+    
+    if (ball.progress >= 1.0) {
+        // スイングされずにミットに到達した場合（ストライク/ボール判定だが今回は一律見送り三振/アウト扱い）
+        ball.active = false;
+        showResult('STRIKE', 'res-strike');
+        streak = 0;
+        document.getElementById('streak').innerText = streak;
+        setTimeout(nextPitch, 2000);
+        return;
+    }
+
+    // 遠近感を出すためのサイズ変更（指数関数的に手前で急激に大きくなる）
+    ball.size = 3 + Math.pow(ball.progress, 3) * 26;
+
+    // 球種ごとの変化球ロジック
+    let currentX = PITCHER_X + (ball.targetX - PITCHER_X) * ball.progress;
+    let currentY = PITCHER_Y + (ball.targetY - PITCHER_Y) * ball.progress;
+
+    if (ball.currentPitch.type === 'slider') {
+        // 後半にかけて急激に右（打者から見て左）へ曲がる
+        if (ball.progress > 0.4) {
+            currentX -= Math.pow((ball.progress - 0.4), 2) * 160;
         }
-
-        function setupTouchControls() {
-            // ★画面のボタンをタッチした時に、裏にあるカメラが反応しないようにイベントを止める（stopPropagation）
-            const bindTouch = (id, prop) => {
-                const btn = document.getElementById(id);
-                btn.addEventListener('pointerdown', (e) => { 
-                    e.preventDefault(); e.stopPropagation(); input[prop] = true; 
-                });
-                btn.addEventListener('pointerup', (e) => { 
-                    e.preventDefault(); e.stopPropagation(); input[prop] = false; 
-                });
-                btn.addEventListener('pointerleave', (e) => { 
-                    e.preventDefault(); e.stopPropagation(); input[prop] = false; 
-                });
-            };
-            bindTouch('pad-up', 'forward');
-            bindTouch('pad-down', 'backward');
-            bindTouch('pad-left', 'left');
-            bindTouch('pad-right', 'right');
-            bindTouch('pad-jump', 'jump');
+    } else if (ball.currentPitch.type === 'fork') {
+        // 手前で急激に落ちる
+        if (ball.progress > 0.5) {
+            currentY += Math.pow((ball.progress - 0.5), 2) * 180;
         }
-
-        function handleKeyEvent(event, isDown) {
-            switch (event.key.toLowerCase()) {
-                case 'w': case 'arrowup': input.forward = isDown; break;
-                case 's': case 'arrowdown': input.backward = isDown; break;
-                case 'a': case 'arrowleft': input.left = isDown; break;
-                case 'd': case 'arrowright': input.right = isDown; break;
-                case ' ': input.jump = isDown; break;
-                case 'r': if (isDown) resetPlayer(); break;
-            }
+    } else if (ball.currentPitch.type === 'cut') {
+        // 手元でわずかに小さく曲がる
+        if (ball.progress > 0.7) {
+            currentX -= Math.pow((ball.progress - 0.7), 2) * 80;
         }
+    }
 
-        function isColliding(pos) {
-            let pMinX = pos.x - playerSize.x / 2; let pMaxX = pos.x + playerSize.x / 2;
-            let pMinY = pos.y - playerSize.y / 2; let pMaxY = pos.y + playerSize.y / 2;
-            let pMinZ = pos.z - playerSize.z / 2; let pMaxZ = pos.z + playerSize.z / 2;
+    ball.x = currentX;
+    ball.y = currentY;
+}
 
-            for (let i = 0; i < colliders.length; i++) {
-                let box = new THREE.Box3().setFromObject(colliders[i]);
-                if (pMinX < box.max.x && pMaxX > box.min.x &&
-                    pMinY < box.max.y && pMaxY > box.min.y &&
-                    pMinZ < box.max.z && pMaxZ > box.min.z) {
-                    return true;
-                }
-            }
-            return false;
-        }
+// ボールの描画（リアルな影付き）
+function drawBall() {
+    ctx.save();
+    // ボールの影
+    ctx.fillStyle = 'rgba(0,0,0,0.3)';
+    ctx.beginPath();
+    ctx.arc(ball.x + ball.size*0.2, ball.y + ball.size*0.3, ball.size, 0, Math.PI*2);
+    ctx.fill();
 
-        function updatePhysics() {
-            // カメラの向きを基準にした移動ベクトルの計算
-            const camDir = new THREE.Vector3();
-            camera.getWorldDirection(camDir);
-            camDir.y = 0; 
-            camDir.normalize();
+    // ボール本体
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.arc(ball.x, ball.y, ball.size, 0, Math.PI*2);
+    ctx.fill();
 
-            const camRight = new THREE.Vector3();
-            camRight.crossVectors(camDir, camera.up).normalize();
+    // プロスピ風の「回転シーム（縫い目）」の簡易表現（球種色を少し混ぜる）
+    ctx.strokeStyle = ball.currentPitch.color;
+    ctx.lineWidth = ball.size > 8 ? 2 : 1;
+    ctx.beginPath();
+    ctx.arc(ball.x, ball.y, ball.size * 0.7, 0.2 * Math.PI, 0.8 * Math.PI);
+    ctx.stroke();
+    ctx.restore();
+}
 
-            let moveX = 0, moveZ = 0;
+// プロスピ風「ミートカーソル」の描画
+function drawMeetCursor() {
+    ctx.save();
+    
+    // 黄色の半透明ミートエリア
+    ctx.fillStyle = 'rgba(230, 180, 30, 0.25)';
+    ctx.strokeStyle = 'rgba(230, 180, 30, 0.7)';
+    ctx.lineWidth = 2;
+    
+    // 通常ミートカーソル（横長楕円形）
+    const cursorW = 45;
+    const cursorH = 30;
+    
+    ctx.beginPath();
+    ctx.ellipse(mouseX, mouseY, cursorW, cursorH, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    
+    // 【プロスピのキモ】中心の「芯（ジャストミートエリア）」
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+    ctx.beginPath();
+    ctx.arc(mouseX, mouseY, 6, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // ガイド用十字ライン
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(mouseX - 15, mouseY); ctx.lineTo(mouseX + 15, mouseY);
+    ctx.moveTo(mouseX, mouseY - 10); ctx.lineTo(mouseX, mouseY + 10);
+    ctx.stroke();
+    
+    ctx.restore();
+}
 
-            if (input.forward) { moveX += camDir.x; moveZ += camDir.z; }
-            if (input.backward) { moveX -= camDir.x; moveZ -= camDir.z; }
-            if (input.left) { moveX -= camRight.x; moveZ -= camRight.z; }
-            if (input.right) { moveX += camRight.x; moveZ += camRight.z; }
+// スイングの判定ロジック（ここが一番本格的な部分）
+function evaluateSwing() {
+    ball.hasSwung = true;
+    ball.active = false;
 
-            // 移動速度の適用
-            if (moveX !== 0 || moveZ !== 0) {
-                const moveLen = Math.sqrt(moveX * moveX + moveZ * moveZ);
-                playerVelocity.x = (moveX / moveLen) * MOVE_SPEED;
-                playerVelocity.z = (moveZ / moveLen) * MOVE_SPEED;
-            } else {
-                playerVelocity.x = 0;
-                playerVelocity.z = 0;
-            }
+    // 1. タイミング判定 (ボールの進捗度が 0.88 ~ 0.96 の間がジャストタイミング)
+    // 150km/h超の球に対してコンマ数秒のシビアな判定
+    const t = ball.progress;
+    let timingScore = 0; // 0が完璧、離れるほど悪い
+    
+    if (t >= 0.90 && t <= 0.95) {
+        timingScore = Math.abs(t - 0.925); // 最高のタイミング
+    } else {
+        // 完全なタイミング外れ
+        showResult('STRIKE (空振り)', 'res-strike');
+        streak = 0;
+        document.getElementById('streak').innerText = streak;
+        setTimeout(nextPitch, 2000);
+        return;
+    }
 
-            playerVelocity.y += GRAVITY;
+    // 2. 位置（ミート）判定
+    const distX = Math.abs(ball.x - mouseX);
+    const distY = Math.abs(ball.y - mouseY);
 
-            if (input.jump && isGrounded) {
-                playerVelocity.y = JUMP_FORCE;
-                isGrounded = false;
-            }
-            
-            // X軸
-            playerPos.x += playerVelocity.x;
-            if (isColliding(playerPos)) {
-                playerPos.x -= playerVelocity.x;
-                playerVelocity.x = 0;
-            }
+    // 通常ミートエリア（楕円内）に入っているか判定
+    const inCursor = (Math.pow(distX, 2) / Math.pow(45, 2)) + (Math.pow(distY, 2) / Math.pow(30, 2)) <= 1.0;
+    // 芯（ジャストミート）に入っているか判定
+    const inCenter = distX <= 8 && distY <= 8;
 
-            // Z軸
-            playerPos.z += playerVelocity.z;
-            if (isColliding(playerPos)) {
-                playerPos.z -= playerVelocity.z;
-                playerVelocity.z = 0;
-            }
+    if (!inCursor) {
+        showResult('STRIKE (空振り)', 'res-strike');
+        streak = 0;
+    } else if (inCenter && timingScore < 0.015) {
+        // 芯 ＆ タイミング完璧 ＝ ホームラン
+        showResult('HOMERUN!!', 'res-homerun');
+        score += 1000 + (streak * 200);
+        streak++;
+    } else if (inCenter || (inCursor && timingScore < 0.01)) {
+        // どちらかが優秀 ＝ ヒット
+        showResult('HIT!', 'res-hit');
+        score += 500;
+        streak++;
+    } else if (timingScore > 0.02) {
+        // タイミングが少しズレた ＝ ファウル
+        showResult('FOUL', 'res-foul');
+    } else {
+        // カーソルの端っこ ＝ 凡打（アウト）
+        showResult('OUT (凡打)', 'res-out');
+        streak = 0;
+    }
 
-            // Y軸
-            isGrounded = false;
-            playerPos.y += playerVelocity.y;
-            if (isColliding(playerPos)) {
-                if (playerVelocity.y < 0) isGrounded = true; 
-                playerPos.y -= playerVelocity.y;
-                playerVelocity.y = 0;
-            }
+    document.getElementById('score').innerText = score;
+    document.getElementById('streak').innerText = streak;
+    
+    // 2.5秒後に次の球へ
+    setTimeout(nextPitch, 2500);
+}
 
-            playerMesh.position.copy(playerPos);
+// 画面中央にド派手な判定を出す関数
+function showResult(text, className) {
+    const resDisp = document.getElementById('result-display');
+    resDisp.innerText = text;
+    resDisp.className = 'show ' + className;
+}
+</script>
 
-            // 奈落判定
-            if (playerPos.y < -400) resetPlayer();
-        }
-
-        function resetPlayer() {
-            playerPos.set(0, 100, 0);
-            playerVelocity.set(0, 0, 0);
-            isGrounded = false;
-        }
-
-        function loadSouWorld(event) {
-            const file = event.target.files[0];
-            if (!file) return;
-            const reader = new FileReader();
-            reader.onload = function(e) {
-                try {
-                    const loadedData = JSON.parse(e.target.result);
-                    clearCurrentWorld();
-                    const cubeGeo = new THREE.BoxGeometry(50, 50, 50);
-                    loadedData.forEach(data => {
-                        const mat = new THREE.MeshLambertMaterial({ color: data.color });
-                        const voxel = new THREE.Mesh(cubeGeo, mat);
-                        voxel.position.set(data.x, data.y, data.z);
-                        scene.add(voxel);
-                        colliders.push(voxel); 
-                    });
-                    resetPlayer();
-                } catch (error) { alert('読込失敗'); }
-            };
-            reader.readAsText(file);
-            event.target.value = '';
-        }
-
-        function loadGltfWorld(event) {
-            const file = event.target.files[0];
-            if (!file) return;
-            const reader = new FileReader();
-            reader.onload = function(e) {
-                const loader = new THREE.GLTFLoader();
-                clearCurrentWorld();
-                loader.parse(e.target.result, '', function(gltf) {
-                    scene.add(gltf.scene);
-                    gltf.scene.traverse(function(child) {
-                        if (child.isMesh) {
-                            if(child.material) child.material.roughness = 0.8;
-                            colliders.push(child);
-                        }
-                    });
-                    resetPlayer();
-                }, function() { alert('展開失敗'); });
-            };
-            reader.readAsText(file);
-            event.target.value = '';
-        }
-
-        function clearCurrentWorld() {
-            colliders.forEach(obj => {
-                if (obj.geometry && obj.geometry.type !== "BoxGeometry" || (obj.geometry && obj.geometry.parameters.width !== 200)) {
-                    scene.remove(obj);
-                }
-            });
-            colliders = [colliders[0]]; // 土台だけ残す
-        }
-
-        function onWindowResize() {
-            camera.aspect = window.innerWidth / window.innerHeight;
-            camera.updateProjectionMatrix();
-            renderer.setSize(window.innerWidth, window.innerHeight);
-        }
-
-        function animate() {
-            requestAnimationFrame(animate);
-            updatePhysics();
-            
-            // カメラの注視点をプレイヤーに追従させる（視点は勝手に回らなくなります）
-            controls.target.copy(playerPos);
-            controls.update();
-            
-            renderer.render(scene, camera);
-        }
-    </script>
 </body>
 </html>
