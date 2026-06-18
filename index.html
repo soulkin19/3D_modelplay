@@ -1,344 +1,157 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>Multi Bomberman</title>
-  <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-database-compat.js"></script>
-  <style>
-    body {
-      margin: 0; padding: 0; background: #111; color: #0f0; font-family: 'Courier New', monospace;
-      text-align: center; overflow: hidden;
-    }
-    #ui {
-      position: absolute; top: 10px; left: 10px; z-index: 100; background: rgba(0,0,0,0.7); padding: 10px; border-radius: 8px;
-    }
-    canvas {
-      image-rendering: pixelated; border: 4px solid #0f0; margin: 10px auto; display: block; background: #222;
-    }
-    button {
-      background: #0f0; color: #000; border: none; padding: 10px 20px; margin: 5px; font-size: 16px; cursor: pointer; border-radius: 4px;
-    }
-    button:hover { background: #0c0; }
-    .hidden { display: none; }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Soulkin ルームチャット</title>
+    <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-analytics-compat.js"></script>
+    <style>
+        body {
+            font-family: 'Segoe UI', sans-serif;
+            margin: 0;
+            padding: 0;
+            background: linear-gradient(135deg, #1e1b4b, #312e81);
+            color: white;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        #login-screen, #room-list-screen, #chat-screen {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+        .header {
+            background: rgba(0,0,0,0.3);
+            padding: 15px;
+            text-align: center;
+            font-size: 24px;
+            font-weight: bold;
+        }
+        .container {
+            flex: 1;
+            padding: 20px;
+            overflow-y: auto;
+        }
+        input, button {
+            padding: 12px;
+            margin: 8px 0;
+            border-radius: 8px;
+            border: none;
+        }
+        input {
+            background: rgba(255,255,255,0.1);
+            color: white;
+            width: 100%;
+        }
+        button {
+            background: #6366f1;
+            color: white;
+            font-weight: bold;
+            cursor: pointer;
+            transition: 0.3s;
+        }
+        button:hover {
+            background: #4f46e5;
+        }
+        .room-card {
+            background: rgba(255,255,255,0.1);
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 10px;
+            cursor: pointer;
+        }
+        .messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 15px;
+            background: rgba(0,0,0,0.2);
+            border-radius: 10px;
+            margin-bottom: 10px;
+        }
+        .message {
+            margin: 10px 0;
+            padding: 10px 14px;
+            border-radius: 18px;
+            max-width: 80%;
+        }
+        .my-message {
+            background: #6366f1;
+            align-self: flex-end;
+            margin-left: auto;
+            border-bottom-right-radius: 4px;
+        }
+        .other-message {
+            background: rgba(255,255,255,0.15);
+            align-self: flex-start;
+            border-bottom-left-radius: 4px;
+        }
+        .chat-input-area {
+            display: flex;
+            gap: 10px;
+            padding: 10px;
+        }
+        .chat-input-area input {
+            flex: 1;
+        }
+        .hidden {
+            display: none !important;
+        }
+        .user-info {
+            font-size: 14px;
+            opacity: 0.8;
+        }
+    </style>
 </head>
 <body>
 
-<div id="lobby">
-  <h1>🔥 Multi Bomberman 🔥</h1>
-  <input type="text" id="playerName" placeholder="あなたの名前" value="Player" style="padding:10px; font-size:18px; width:200px;">
-  <br><br>
-  <button onclick="createRoom()">部屋を作成（最大18人）</button>
-  <br><br>
-  <input type="text" id="roomCode" placeholder="部屋コードを入力" style="padding:10px; font-size:18px; width:200px;">
-  <button onclick="joinRoom()">部屋に参加</button>
-</div>
+    <!-- ユーザー名入力画面 -->
+    <div id="login-screen">
+        <div class="header">Soulkin チャット</div>
+        <div class="container" style="display:flex; align-items:center; justify-content:center; flex-direction:column;">
+            <h2>ようこそ！</h2>
+            <input type="text" id="username" placeholder="ユーザー名を入力" value="ゲスト">
+            <button onclick="startChat()" style="width:300px; padding:15px;">チャットを開始</button>
+        </div>
+    </div>
 
-<div id="gameContainer" class="hidden">
-  <div id="ui">
-    <span>部屋: <b id="roomIdDisplay"></b></span> | 
-    プレイヤー: <b id="playerCount">0</b>/18<br>
-    <button onclick="placeBomb()">💣 爆弾を置く (Space)</button>
-  </div>
-  <canvas id="canvas" width="800" height="600"></canvas>
-</div>
+    <!-- ルーム一覧画面 -->
+    <div id="room-list-screen" class="hidden">
+        <div class="header">ルーム一覧</div>
+        <div class="container">
+            <input type="text" id="new-room-name" placeholder="新しいルーム名">
+            <button onclick="createRoom()">ルームを作成</button>
+            
+            <h3>参加可能なルーム</h3>
+            <div id="room-list"></div>
+        </div>
+        <div style="padding:10px; text-align:center;">
+            <button onclick="logout()">退出</button>
+        </div>
+    </div>
+
+    <!-- チャット画面 -->
+    <div id="chat-screen" class="hidden">
+        <div class="header">
+            <span id="current-room-name"></span>
+            <button onclick="leaveRoom()" style="float:right; background:#ef4444; font-size:14px;">退出</button>
+        </div>
+        
+        <div class="messages" id="messages"></div>
+        
+        <div class="chat-input-area">
+            <input type="text" id="message-input" placeholder="メッセージを入力..." onkeypress="if(event.key==='Enter') sendMessage()">
+            <button onclick="sendMessage()">送信</button>
+        </div>
+    </div>
 
 <script>
-// ====================== Firebase ======================
+// Firebase設定（あなたが提供したもの）
 const firebaseConfig = {
   apiKey: "AIzaSyCwhHspaG94goiCIjVj3h-Un5pBK3JTjMU",
   authDomain: "soulkin-aa3b7.firebaseapp.com",
   databaseURL: "https://soulkin-aa3b7-default-rtdb.firebaseio.com",
   projectId: "soulkin-aa3b7",
-  storageBucket: "soulkin-aa3b7.firebasestorage.app",
-  messagingSenderId: "358331064206",
-  appId: "1:358331064206:web:d7760ea0919259418a4edf"
-};
-
-firebase.initializeApp(firebaseConfig);
-const db = firebase.database();
-
-// ====================== ゲーム設定 ======================
-const COLS = 15;
-const ROWS = 11;
-const TILE_SIZE = 40;
-const canvas = document.getElementById('canvas');
-const ctx = canvas.getContext('2d');
-
-let roomId = null;
-let myPlayerId = null;
-let players = {};
-let bombs = {};
-let explosions = [];
-let map = [];
-
-// 簡易マップ生成（固定）
-function generateMap() {
-  map = [];
-  for (let y = 0; y < ROWS; y++) {
-    map[y] = [];
-    for (let x = 0; x < COLS; x++) {
-      if (x === 0 || x === COLS-1 || y === 0 || y === ROWS-1) {
-        map[y][x] = 1; // 壁
-      } else if (x % 2 === 1 && y % 2 === 1) {
-        map[y][x] = 1; // 固定壁
-      } else if (Math.random() < 0.7 && !(x < 3 && y < 3) && !(x > COLS-4 && y > ROWS-4)) {
-        map[y][x] = 2; // 破壊可能ブロック
-      } else {
-        map[y][x] = 0; // 空
-      }
-    }
-  }
-}
-
-// ====================== 部屋機能 ======================
-function createRoom() {
-  const name = document.getElementById('playerName').value || "Player";
-  roomId = "room_" + Math.random().toString(36).substr(2, 6);
-  myPlayerId = "p_" + Math.random().toString(36).substr(2, 8);
-
-  db.ref(`rooms/${roomId}`).set({
-    status: "waiting",
-    maxPlayers: 18,
-    createdAt: Date.now()
-  });
-
-  joinRoomLogic(name);
-}
-
-function joinRoom() {
-  const code = document.getElementById('roomCode').value.trim();
-  if (!code) return alert("部屋コードを入力してください");
-  roomId = code;
-  const name = document.getElementById('playerName').value || "Player";
-  myPlayerId = "p_" + Math.random().toString(36).substr(2, 8);
-  joinRoomLogic(name);
-}
-
-function joinRoomLogic(name) {
-  const playerRef = db.ref(`rooms/${roomId}/players/${myPlayerId}`);
-  
-  playerRef.set({
-    name: name,
-    x: 1,
-    y: 1,
-    direction: "down",
-    alive: true,
-    color: '#' + Math.floor(Math.random()*16777215).toString(16)
-  });
-
-  // 切断時に削除
-  playerRef.onDisconnect().remove();
-
-  document.getElementById('lobby').classList.add('hidden');
-  document.getElementById('gameContainer').classList.remove('hidden');
-  document.getElementById('roomIdDisplay').textContent = roomId;
-
-  startGame();
-}
-
-// ====================== ゲーム本体 ======================
-function startGame() {
-  generateMap();
-
-  const playersRef = db.ref(`rooms/${roomId}/players`);
-  const bombsRef = db.ref(`rooms/${roomId}/bombs`);
-
-  // プレイヤー同期
-  playersRef.on('value', (snap) => {
-    players = snap.val() || {};
-    document.getElementById('playerCount').textContent = Object.keys(players).length;
-  });
-
-  // 爆弾同期
-  bombsRef.on('value', (snap) => {
-    bombs = snap.val() || {};
-  });
-
-  // キーボード操作
-  let keys = {};
-  window.addEventListener('keydown', e => {
-    keys[e.key] = true;
-    if (e.key === ' ' || e.key === 'Spacebar') {
-      e.preventDefault();
-      placeBomb();
-    }
-  });
-  window.addEventListener('keyup', e => keys[e.key] = false);
-
-  // 簡易タッチ操作（スマホ）
-  let touchStartX, touchStartY;
-  canvas.addEventListener('touchstart', e => {
-    touchStartX = e.touches[0].clientX;
-    touchStartY = e.touches[0].clientY;
-  });
-  canvas.addEventListener('touchend', e => {
-    const touchEndX = e.changedTouches[0].clientX;
-    const touchEndY = e.changedTouches[0].clientY;
-    const dx = touchEndX - touchStartX;
-    const dy = touchEndY - touchStartY;
-    if (Math.abs(dx) > 30 || Math.abs(dy) > 30) {
-      if (Math.abs(dx) > Math.abs(dy)) {
-        movePlayer(dx > 0 ? 1 : -1, 0);
-      } else {
-        movePlayer(0, dy > 0 ? 1 : -1);
-      }
-    } else {
-      placeBomb();
-    }
-  });
-
-  gameLoop();
-}
-
-// 移動（簡易版：1タイル移動）
-function movePlayer(dx, dy) {
-  const me = players[myPlayerId];
-  if (!me || !me.alive) return;
-
-  const newX = Math.round(me.x + dx);
-  const newY = Math.round(me.y + dy);
-
-  if (newX < 0 || newX >= COLS || newY < 0 || newY >= ROWS) return;
-  if (map[newY][newX] === 1) return; // 壁
-
-  // 他のプレイヤーとの簡易衝突（省略可）
-  db.ref(`rooms/${roomId}/players/${myPlayerId}`).update({
-    x: newX,
-    y: newY,
-    direction: dx === 1 ? "right" : dx === -1 ? "left" : dy === 1 ? "down" : "up"
-  });
-}
-
-// 爆弾設置
-function placeBomb() {
-  const me = players[myPlayerId];
-  if (!me || !me.alive) return;
-
-  const bombId = "b_" + Date.now();
-  db.ref(`rooms/${roomId}/bombs/${bombId}`).set({
-    x: Math.round(me.x),
-    y: Math.round(me.y),
-    owner: myPlayerId,
-    time: Date.now(),
-    power: 2
-  });
-
-  // 自動爆発（2.5秒後）
-  setTimeout(() => {
-    explodeBomb(bombId);
-  }, 2500);
-}
-
-function explodeBomb(bombId) {
-  const bomb = bombs[bombId];
-  if (!bomb) return;
-
-  db.ref(`rooms/${roomId}/bombs/${bombId}`).remove();
-
-  const {x, y, power} = bomb;
-  explosions.push({x, y, time: Date.now(), power});
-
-  // 簡易爆風処理（上下左右）
-  const dirs = [[0,0], [1,0], [-1,0], [0,1], [0,-1]];
-  dirs.forEach(([dx, dy]) => {
-    for (let i = 1; i <= power; i++) {
-      const ex = x + dx * i;
-      const ey = y + dy * i;
-      if (ex < 0 || ex >= COLS || ey < 0 || ey >= ROWS) break;
-      if (map[ey][ex] === 1) break;
-      if (map[ey][ex] === 2) {
-        map[ey][ex] = 0; // 破壊
-        break;
-      }
-      // プレイヤー死亡判定（簡易）
-      Object.keys(players).forEach(pid => {
-        const p = players[pid];
-        if (p && Math.round(p.x) === ex && Math.round(p.y) === ey) {
-          if (pid === myPlayerId) {
-            alert("💥 やられた！");
-          }
-          db.ref(`rooms/${roomId}/players/${pid}/alive`).set(false);
-        }
-      });
-    }
-  });
-
-  setTimeout(() => {
-    explosions = explosions.filter(e => e.time !== Date.now() - 800);
-  }, 800);
-}
-
-// ====================== 描画 ======================
-function draw() {
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-  // マップ描画
-  for (let y = 0; y < ROWS; y++) {
-    for (let x = 0; x < COLS; x++) {
-      const px = x * TILE_SIZE;
-      const py = y * TILE_SIZE;
-      if (map[y][x] === 1) {
-        ctx.fillStyle = '#555';
-        ctx.fillRect(px, py, TILE_SIZE, TILE_SIZE);
-      } else if (map[y][x] === 2) {
-        ctx.fillStyle = '#c84';
-        ctx.fillRect(px, py, TILE_SIZE, TILE_SIZE);
-      } else {
-        ctx.fillStyle = '#222';
-        ctx.fillRect(px, py, TILE_SIZE, TILE_SIZE);
-      }
-    }
-  }
-
-  // プレイヤー描画
-  Object.values(players).forEach(p => {
-    if (!p.alive) return;
-    ctx.fillStyle = p.color || '#0f0';
-    ctx.fillRect(p.x * TILE_SIZE + 5, p.y * TILE_SIZE + 5, TILE_SIZE - 10, TILE_SIZE - 10);
-    ctx.fillStyle = '#000';
-    ctx.font = '12px Arial';
-    ctx.fillText(p.name.slice(0,6), p.x * TILE_SIZE + 8, p.y * TILE_SIZE + 20);
-  });
-
-  // 爆弾描画
-  Object.values(bombs).forEach(b => {
-    ctx.fillStyle = '#f80';
-    ctx.beginPath();
-    ctx.arc(b.x * TILE_SIZE + TILE_SIZE/2, b.y * TILE_SIZE + TILE_SIZE/2, 15, 0, Math.PI*2);
-    ctx.fill();
-  });
-
-  // 爆風描画
-  ctx.fillStyle = 'orange';
-  explosions.forEach(e => {
-    ctx.globalAlpha = 0.7;
-    ctx.fillRect(e.x * TILE_SIZE, e.y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
-  });
-  ctx.globalAlpha = 1;
-}
-
-// ====================== ゲームループ ======================
-let lastTime = 0;
-function gameLoop() {
-  const now = Date.now();
-  if (now - lastTime > 100) {  // 移動間隔制御
-    if (keys['ArrowRight'] || keys['d']) movePlayer(1, 0);
-    if (keys['ArrowLeft'] || keys['a']) movePlayer(-1, 0);
-    if (keys['ArrowDown'] || keys['s']) movePlayer(0, 1);
-    if (keys['ArrowUp'] || keys['w']) movePlayer(0, -1);
-    lastTime = now;
-  }
-
-  draw();
-  requestAnimationFrame(gameLoop);
-}
-
-// 自動リロード防止（開発用）
-console.log("%cMulti Bomberman 起動！ スペースキーで爆弾", "color: lime; font-size:16px");
-</script>
-
-</body>
-</html>
+  storageBucket: "soul
