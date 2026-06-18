@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>1v1 チャットアプリ</title>
+    <title>匿名 1v1 チャットアプリ</title>
     <style>
         body { font-family: sans-serif; margin: 0; background: #f0f2f5; display: flex; justify-content: center; padding: 20px; }
         .container { width: 100%; max-width: 800px; background: white; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); overflow: hidden; padding: 20px;}
@@ -11,9 +11,9 @@
         
         /* 認証画面 */
         .auth-form { max-width: 300px; margin: 0 auto; text-align: center; }
-        .auth-form input { width: 100%; margin-bottom: 10px; padding: 8px; box-sizing: border-box; }
-        .auth-form button { width: 100%; padding: 10px; margin-bottom: 10px; background: #0084ff; color: white; border: none; border-radius: 4px; cursor: pointer; }
-        .toggle-auth { color: #0084ff; cursor: pointer; text-decoration: underline; font-size: 0.9em; }
+        .auth-form input { width: 100%; margin-bottom: 15px; padding: 10px; box-sizing: border-box; border: 1px solid #ddd; border-radius: 4px;}
+        .auth-form button { width: 100%; padding: 12px; background: #0084ff; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 16px;}
+        .auth-form button:hover { background: #0073e6; }
 
         /* メイン画面（2カラム） */
         .main-layout { display: flex; height: 500px; }
@@ -22,7 +22,7 @@
         .user-list-area { width: 30%; border-right: 1px solid #ddd; overflow-y: auto; padding-right: 10px; }
         .user-item { padding: 10px; border-bottom: 1px solid #eee; cursor: pointer; border-radius: 4px; }
         .user-item:hover { background: #f0f2f5; }
-        .user-item.active { background: #e6f2ff; font-weight: bold; }
+        .user-item.active { background: #e6f2ff; font-weight: bold; border-left: 4px solid #0084ff;}
 
         /* チャットエリア */
         .chat-area { width: 70%; display: flex; flex-direction: column; padding-left: 10px; }
@@ -46,35 +46,27 @@
 <body>
 
 <div class="container">
-    <!-- 認証画面（ログイン / 新規登録） -->
     <div id="auth-section" class="auth-form">
-        <h2 id="auth-title">ログイン</h2>
-        <div id="name-field" class="hidden">
-            <input type="text" id="reg-name" placeholder="ユーザー名 (新規登録時のみ)">
-        </div>
-        <input type="email" id="auth-email" placeholder="メールアドレス">
-        <input type="password" id="auth-pass" placeholder="パスワード (6文字以上)">
-        <button id="auth-btn">ログイン</button>
-        <p class="toggle-auth" id="toggle-auth-btn">新規登録はこちら</p>
+        <h2>チャットに参加</h2>
+        <p style="font-size: 0.9em; color: #666;">名前を決めるだけで始められます</p>
+        <input type="text" id="username-input" placeholder="あなたの表示名（例: 太郎）">
+        <button id="auth-btn">参加する</button>
     </div>
 
-    <!-- メイン画面（ユーザー一覧＆チャット） -->
     <div id="main-section" class="hidden">
         <div id="header-info">
             <div>ログイン中: <strong id="my-name-display"></strong></div>
-            <button id="logout-btn" style="padding: 5px 10px;">ログアウト</button>
+            <button id="logout-btn" style="padding: 5px 10px; border: 1px solid #ccc; background: white; cursor: pointer; border-radius: 4px;">退出（ログアウト）</button>
         </div>
 
         <div class="main-layout">
-            <!-- ユーザー一覧（左側） -->
             <div class="user-list-area">
-                <h3>ユーザー一覧</h3>
+                <h3 style="margin-top: 0; font-size: 1em;">オンラインのユーザー</h3>
                 <div id="user-list"></div>
             </div>
 
-            <!-- チャットエリア（右側） -->
             <div class="chat-area">
-                <h3 id="chat-title">ユーザーを選択してください</h3>
+                <h3 id="chat-title" style="margin-top: 0; font-size: 1.1em;">ユーザーを選択してください</h3>
                 <div id="messages"></div>
                 <div class="chat-inputs hidden" id="chat-inputs">
                     <input type="text" id="message-input" placeholder="メッセージを入力... (@名前 でメンション)">
@@ -88,8 +80,8 @@
 <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
     import { getDatabase, ref, push, onChildAdded, onValue, set, off } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
-    // Authenticationのモジュールを追加
-    import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, onAuthStateChanged, signOut, updateProfile } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+    // signInAnonymously（匿名認証）をインポート
+    import { getAuth, signInAnonymously, onAuthStateChanged, signOut, updateProfile } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
 
     const firebaseConfig = {
         apiKey: "AIzaSyCwhHspaG94goiCIjVj3h-Un5pBK3JTjMU",
@@ -108,13 +100,8 @@
     // UI要素
     const authSection = document.getElementById('auth-section');
     const mainSection = document.getElementById('main-section');
-    const authTitle = document.getElementById('auth-title');
-    const nameField = document.getElementById('name-field');
-    const regName = document.getElementById('reg-name');
-    const authEmail = document.getElementById('auth-email');
-    const authPass = document.getElementById('auth-pass');
+    const usernameInput = document.getElementById('username-input');
     const authBtn = document.getElementById('auth-btn');
-    const toggleAuthBtn = document.getElementById('toggle-auth-btn');
     
     const myNameDisplay = document.getElementById('my-name-display');
     const logoutBtn = document.getElementById('logout-btn');
@@ -125,54 +112,18 @@
     const messageInput = document.getElementById('message-input');
     const sendBtn = document.getElementById('send-btn');
 
-    let isLoginMode = true;
     let currentUser = null;
     let currentChatRef = null;
     let selectedUserId = null;
-    let selectedUserName = "";
+    let pendingName = ""; // ログイン処理中に名前を一時保持する変数
 
-    // --- 認証機能のUI切り替え ---
-    toggleAuthBtn.addEventListener('click', () => {
-        isLoginMode = !isLoginMode;
-        if (isLoginMode) {
-            authTitle.innerText = 'ログイン';
-            authBtn.innerText = 'ログイン';
-            toggleAuthBtn.innerText = '新規登録はこちら';
-            nameField.classList.add('hidden');
-        } else {
-            authTitle.innerText = '新規登録';
-            authBtn.innerText = '登録して開始';
-            toggleAuthBtn.innerText = 'ログインはこちら';
-            nameField.classList.remove('hidden');
-        }
-    });
-
-    // --- ログイン / 新規登録 処理 ---
+    // --- 匿名ログイン処理 ---
     authBtn.addEventListener('click', () => {
-        const email = authEmail.value;
-        const pass = authPass.value;
-        const name = regName.value;
-
-        if (isLoginMode) {
-            // ログイン
-            signInWithEmailAndPassword(auth, email, pass).catch(e => alert('エラー: ' + e.message));
-        } else {
-            // 新規登録
-            if (!name) return alert('ユーザー名を入力してください');
-            createUserWithEmailAndPassword(auth, email, pass)
-                .then((userCredential) => {
-                    const user = userCredential.user;
-                    // Firebase Authのプロフィールに名前を設定
-                    updateProfile(user, { displayName: name }).then(() => {
-                        // DBの "users" ツリーにも情報を保存（一覧表示用）
-                        set(ref(db, 'users/' + user.uid), {
-                            username: name,
-                            email: email
-                        });
-                    });
-                })
-                .catch(e => alert('登録エラー: ' + e.message));
-        }
+        pendingName = usernameInput.value.trim();
+        if (!pendingName) return alert('表示名を入力してください');
+        
+        // 匿名でサインイン
+        signInAnonymously(auth).catch(e => alert('ログインエラー: ' + e.message));
     });
 
     // ログアウト処理
@@ -181,15 +132,28 @@
     // --- 認証状態の監視 ---
     onAuthStateChanged(auth, (user) => {
         if (user) {
-            // ログイン成功時
             currentUser = user;
             authSection.classList.add('hidden');
             mainSection.classList.remove('hidden');
-            // 名前がまだ反映されていない場合はリロードを待つ
-            myNameDisplay.innerText = user.displayName || "名無しさん";
+
+            // 新規参加時（pendingNameがある場合）にプロフィールとDBを更新
+            if (pendingName) {
+                updateProfile(user, { displayName: pendingName }).then(() => {
+                    set(ref(db, 'users/' + user.uid), { username: pendingName });
+                    myNameDisplay.innerText = pendingName;
+                    pendingName = ""; // 処理が終わったらクリア
+                });
+            } else {
+                // ページ更新などで既にログイン状態だった場合
+                const displayName = user.displayName || "匿名ユーザー";
+                myNameDisplay.innerText = displayName;
+                // 万が一DBに存在しない場合に備えて上書き
+                set(ref(db, 'users/' + user.uid), { username: displayName });
+            }
+
             loadUserList();
         } else {
-            // ログアウト時
+            // ログアウト状態
             currentUser = null;
             authSection.classList.remove('hidden');
             mainSection.classList.add('hidden');
@@ -197,6 +161,7 @@
             messagesDiv.innerHTML = '';
             chatInputs.classList.add('hidden');
             chatTitle.innerText = 'ユーザーを選択してください';
+            usernameInput.value = '';
             if (currentChatRef) off(currentChatRef);
         }
     });
@@ -224,27 +189,21 @@
 
     // --- 1v1 チャットを開く ---
     function openChat(targetUid, targetName, element) {
-        // 選択状態のスタイリング
         document.querySelectorAll('.user-item').forEach(el => el.classList.remove('active'));
         element.classList.add('active');
 
         selectedUserId = targetUid;
-        selectedUserName = targetName;
         chatTitle.innerText = `${targetName} とのチャット`;
         chatInputs.classList.remove('hidden');
         messagesDiv.innerHTML = '';
 
-        // 以前のリスナーを解除
         if (currentChatRef) off(currentChatRef);
 
-        // ★2人のUIDをソートして結合し、一意のルームIDを生成
+        // 2人のUIDを結合してルームIDを作成
         const roomId = [currentUser.uid, targetUid].sort().join('_');
         currentChatRef = ref(db, 'chats/' + roomId);
 
-        // メッセージの読み込み
-        onChildAdded(currentChatRef, (data) => {
-            displayMessage(data.val());
-        });
+        onChildAdded(currentChatRef, (data) => displayMessage(data.val()));
     }
 
     // --- メッセージ送信 ---
@@ -259,7 +218,7 @@
 
         push(currentChatRef, {
             senderId: currentUser.uid,
-            senderName: currentUser.displayName,
+            senderName: currentUser.displayName || "匿名ユーザー",
             text: text,
             timestamp: Date.now()
         });
@@ -272,7 +231,6 @@
         const isMe = data.senderId === currentUser.uid;
         messageEl.className = `message ${isMe ? 'me' : 'other'}`;
         
-        // メンションの正規表現 (@ から始まり、スペースや記号までの文字列)
         let formattedText = escapeHtml(data.text);
         formattedText = formattedText.replace(/@([a-zA-Z0-9_ぁ-んァ-ヶ一-龠]+)/g, '<span class="mention">@$1</span>');
 
