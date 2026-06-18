@@ -1,507 +1,343 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>プロスピ風 バッティング再現ゲーム</title>
-    <style>
-        body {
-            margin: 0;
-            background-color: #111;
-            color: #fff;
-            font-family: 'Helvetica Neue', Arial, sans-serif;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            min-height: 100vh;
-            overflow: hidden;
-            user-select: none;
-        }
-
-        #game-container {
-            position: relative;
-            width: 800px;
-            height: 600px;
-            border: 4px solid #d4af37; /* プロスピ風ゴールド */
-            box-shadow: 0 0 20px rgba(212, 175, 55, 0.5);
-            background: linear-gradient(to bottom, #1a3c1a 0%, #0d200d 100%);
-            cursor: none; /* ゲーム画面内では標準カーソルを消す */
-        }
-
-        canvas {
-            position: absolute;
-            top: 0;
-            left: 0;
-        }
-
-        #ui-layer {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            pointer-events: none;
-            display: flex;
-            flex-direction: column;
-            justify-content: space-between;
-            padding: 20px;
-            box-sizing: border-box;
-        }
-
-        .hud-top {
-            display: flex;
-            justify-content: space-between;
-            width: 100%;
-        }
-
-        .score-board {
-            background: rgba(0, 0, 0, 0.7);
-            border: 2px solid #555;
-            padding: 10px 20px;
-            border-radius: 5px;
-            font-size: 18px;
-            font-weight: bold;
-        }
-
-        .pitch-info {
-            background: rgba(0, 0, 0, 0.8);
-            border-left: 5px solid #ffcc00;
-            padding: 10px 15px;
-            font-size: 20px;
-            font-weight: bold;
-            text-shadow: 1px 1px 2px #000;
-            transform: skewX(-10deg);
-        }
-
-        #result-display {
-            position: absolute;
-            top: 40%;
-            left: 50%;
-            transform: translate(-50%, -50%) scale(0.5);
-            font-size: 64px;
-            font-weight: 900;
-            font-style: italic;
-            text-shadow: 3px 3px 0px #000, -3px -3px 0px #000, 3px -3px 0px #000, -3px 3px 0px #000, 0px 5px 10px rgba(0,0,0,0.8);
-            opacity: 0;
-            transition: all 0.15s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-            z-index: 10;
-        }
-
-        #result-display.show {
-            opacity: 1;
-            transform: translate(-50%, -50%) scale(1);
-        }
-
-        /* 判定ごとのカラー */
-        .res-homerun { color: #ff3333; animation: flash 0.3s infinite; }
-        .res-hit { color: #ffcc00; }
-        .res-foul { color: #cccccc; }
-        .res-strike { color: #3399ff; }
-        .res-out { color: #999999; }
-
-        @keyframes flash {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.7; }
-        }
-
-        #start-screen {
-            position: absolute;
-            top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(0,0,0,0.85);
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            z-index: 20;
-            cursor: default;
-        }
-
-        .btn {
-            background: linear-gradient(to bottom, #d4af37, #aa820a);
-            border: none;
-            color: black;
-            padding: 15px 40px;
-            font-size: 22px;
-            font-weight: bold;
-            border-radius: 30px;
-            cursor: pointer;
-            box-shadow: 0 5px 15px rgba(0,0,0,0.4);
-            transition: transform 0.1s;
-        }
-        .btn:hover { transform: scale(1.05); }
-
-        .controls-desc {
-            margin-top: 20px;
-            font-size: 14px;
-            color: #aaa;
-            text-align: center;
-            line-height: 1.6;
-        }
-    </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Multi Bomberman</title>
+  <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-database-compat.js"></script>
+  <style>
+    body {
+      margin: 0; padding: 0; background: #111; color: #0f0; font-family: 'Courier New', monospace;
+      text-align: center; overflow: hidden;
+    }
+    #ui {
+      position: absolute; top: 10px; left: 10px; z-index: 100; background: rgba(0,0,0,0.7); padding: 10px; border-radius: 8px;
+    }
+    canvas {
+      image-rendering: pixelated; border: 4px solid #0f0; margin: 10px auto; display: block; background: #222;
+    }
+    button {
+      background: #0f0; color: #000; border: none; padding: 10px 20px; margin: 5px; font-size: 16px; cursor: pointer; border-radius: 4px;
+    }
+    button:hover { background: #0c0; }
+    .hidden { display: none; }
+  </style>
 </head>
 <body>
 
-<div id="game-container">
-    <canvas id="gameCanvas" width="800" height="600"></canvas>
-    
-    <div id="ui-layer">
-        <div class="hud-top">
-            <div class="score-board">
-                SCORE: <span id="score">0</span> | QUICK STREAK: <span id="streak">0</span>
-            </div>
-            <div class="pitch-info" id="pitch-announce" style="display:none;">
-                ストレート (152km/h)
-            </div>
-        </div>
-    </div>
+<div id="lobby">
+  <h1>🔥 Multi Bomberman 🔥</h1>
+  <input type="text" id="playerName" placeholder="あなたの名前" value="Player" style="padding:10px; font-size:18px; width:200px;">
+  <br><br>
+  <button onclick="createRoom()">部屋を作成（最大18人）</button>
+  <br><br>
+  <input type="text" id="roomCode" placeholder="部屋コードを入力" style="padding:10px; font-size:18px; width:200px;">
+  <button onclick="joinRoom()">部屋に参加</button>
+</div>
 
-    <div id="result-display">HOMERUN!!</div>
-
-    <div id="start-screen">
-        <h1 style="color: #d4af37; font-size: 42px; margin-bottom: 5px; text-style: italic;">PROSPI HTML-REMAKE</h1>
-        <p style="color: #ccc; margin-bottom: 30px;">~ リアルタイム・バッティングシステム ~</p>
-        <button class="btn" onclick="startGame()">PLAY BALL</button>
-        <div class="controls-desc">
-            【操作方法】<br>
-            マウス移動：ミートカーソルの移動<br>
-            左クリック：スイング（タイミングを合わせろ！）<br>
-            <span style="color: #ffcc00;">※中心の白い「芯」で捉えると打球スピードが上がりホームラン確率がUPします。</span>
-        </div>
-    </div>
+<div id="gameContainer" class="hidden">
+  <div id="ui">
+    <span>部屋: <b id="roomIdDisplay"></b></span> | 
+    プレイヤー: <b id="playerCount">0</b>/18<br>
+    <button onclick="placeBomb()">💣 爆弾を置く (Space)</button>
+  </div>
+  <canvas id="canvas" width="800" height="600"></canvas>
 </div>
 
 <script>
-const canvas = document.getElementById('gameCanvas');
-const ctx = canvas.getContext('2d');
-
-// ゲーム状態
-let gameActive = false;
-let score = 0;
-let streak = 0;
-let mouseX = 400;
-let mouseY = 450;
-
-// ピッチャーとストライクゾーンの座標設定
-const PITCHER_X = 400;
-const PITCHER_Y = 180;
-const ZONE_X = 320;
-const ZONE_Y = 380;
-const ZONE_W = 160;
-const ZONE_H = 160;
-
-// 球種データ定義
-const PITCH_TYPES = [
-    { name: 'ストレート', speed: 153, color: '#ffffff', type: 'straight' },
-    { name: 'スライダー', speed: 138, color: '#33ccff', type: 'slider' },
-    { name: 'フォーク', speed: 141, color: '#ff6633', type: 'fork' },
-    { name: 'カットボール', speed: 147, color: '#99ff33', type: 'cut' }
-];
-
-// ボールオブジェクト
-let ball = {
-    x: PITCHER_X,
-    y: PITCHER_Y,
-    size: 4,
-    vx: 0,
-    vy: 0,
-    active: false,
-    progress: 0, // 0から1へ進む投球進行度
-    currentPitch: PITCH_TYPES[0],
-    actualSpeed: 0,
-    hasSwung: false,
-    targetX: 400, // 最終到達予測点
-    targetY: 450
+// ====================== Firebase ======================
+const firebaseConfig = {
+  apiKey: "AIzaSyCwhHspaG94goiCIjVj3h-Un5pBK3JTjMU",
+  authDomain: "soulkin-aa3b7.firebaseapp.com",
+  databaseURL: "https://soulkin-aa3b7-default-rtdb.firebaseio.com",
+  projectId: "soulkin-aa3b7",
+  storageBucket: "soulkin-aa3b7.firebasestorage.app",
+  messagingSenderId: "358331064206",
+  appId: "1:358331064206:web:d7760ea0919259418a4edf"
 };
 
-// マウス移動イベント
-canvas.addEventListener('mousemove', (e) => {
-    const rect = canvas.getBoundingClientRect();
-    mouseX = e.clientX - rect.left;
-    mouseY = e.clientY - rect.top;
-    
-    // カーソル移動制限（バッターボックス付近のみ）
-    if(mouseX < 200) mouseX = 200;
-    if(mouseX > 600) mouseX = 600;
-    if(mouseY < 300) mouseY = 300;
-    if(mouseY > 550) mouseY = 550;
-});
+firebase.initializeApp(firebaseConfig);
+const db = firebase.database();
 
-// スイング（クリック）イベント
-canvas.addEventListener('mousedown', (e) => {
-    if (!gameActive || !ball.active || ball.hasSwung) return;
-    evaluateSwing();
-});
+// ====================== ゲーム設定 ======================
+const COLS = 15;
+const ROWS = 11;
+const TILE_SIZE = 40;
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
 
+let roomId = null;
+let myPlayerId = null;
+let players = {};
+let bombs = {};
+let explosions = [];
+let map = [];
+
+// 簡易マップ生成（固定）
+function generateMap() {
+  map = [];
+  for (let y = 0; y < ROWS; y++) {
+    map[y] = [];
+    for (let x = 0; x < COLS; x++) {
+      if (x === 0 || x === COLS-1 || y === 0 || y === ROWS-1) {
+        map[y][x] = 1; // 壁
+      } else if (x % 2 === 1 && y % 2 === 1) {
+        map[y][x] = 1; // 固定壁
+      } else if (Math.random() < 0.7 && !(x < 3 && y < 3) && !(x > COLS-4 && y > ROWS-4)) {
+        map[y][x] = 2; // 破壊可能ブロック
+      } else {
+        map[y][x] = 0; // 空
+      }
+    }
+  }
+}
+
+// ====================== 部屋機能 ======================
+function createRoom() {
+  const name = document.getElementById('playerName').value || "Player";
+  roomId = "room_" + Math.random().toString(36).substr(2, 6);
+  myPlayerId = "p_" + Math.random().toString(36).substr(2, 8);
+
+  db.ref(`rooms/${roomId}`).set({
+    status: "waiting",
+    maxPlayers: 18,
+    createdAt: Date.now()
+  });
+
+  joinRoomLogic(name);
+}
+
+function joinRoom() {
+  const code = document.getElementById('roomCode').value.trim();
+  if (!code) return alert("部屋コードを入力してください");
+  roomId = code;
+  const name = document.getElementById('playerName').value || "Player";
+  myPlayerId = "p_" + Math.random().toString(36).substr(2, 8);
+  joinRoomLogic(name);
+}
+
+function joinRoomLogic(name) {
+  const playerRef = db.ref(`rooms/${roomId}/players/${myPlayerId}`);
+  
+  playerRef.set({
+    name: name,
+    x: 1,
+    y: 1,
+    direction: "down",
+    alive: true,
+    color: '#' + Math.floor(Math.random()*16777215).toString(16)
+  });
+
+  // 切断時に削除
+  playerRef.onDisconnect().remove();
+
+  document.getElementById('lobby').classList.add('hidden');
+  document.getElementById('gameContainer').classList.remove('hidden');
+  document.getElementById('roomIdDisplay').textContent = roomId;
+
+  startGame();
+}
+
+// ====================== ゲーム本体 ======================
 function startGame() {
-    document.getElementById('start-screen').style.display = 'none';
-    gameActive = true;
-    score = 0;
-    streak = 0;
-    document.getElementById('score').innerText = score;
-    document.getElementById('streak').innerText = streak;
-    nextPitch();
-    animate();
-}
+  generateMap();
 
-function nextPitch() {
-    // 判定表示をリセット
-    const resDisp = document.getElementById('result-display');
-    resDisp.className = '';
-    
-    // ランダムな球種とコースの決定
-    const pitchConfig = PITCH_TYPES[Math.floor(Math.random() * PITCH_TYPES.length)];
-    const speedVariation = Math.floor(Math.random() * 6) - 3; // ±3km/hのブレ
-    
-    ball.currentPitch = pitchConfig;
-    ball.actualSpeed = pitchConfig.speed + speedVariation;
-    ball.x = PITCHER_X;
-    ball.y = PITCHER_Y;
-    ball.size = 4;
-    ball.progress = 0;
-    ball.hasSwung = false;
-    
-    // ストライクゾーン中心＋ランダムな散らばり（プロスピのコース決定）
-    ball.targetX = ZONE_X + (ZONE_W * 0.1) + Math.random() * (ZONE_W * 0.8);
-    ball.targetY = ZONE_Y + (ZONE_H * 0.1) + Math.random() * (ZONE_H * 0.8);
+  const playersRef = db.ref(`rooms/${roomId}/players`);
+  const bombsRef = db.ref(`rooms/${roomId}/bombs`);
 
-    // 球種アナウンスの表示
-    const announce = document.getElementById('pitch-announce');
-    announce.innerText = `${pitchConfig.name} (${ball.actualSpeed}km/h)`;
-    announce.style.display = 'block';
+  // プレイヤー同期
+  playersRef.on('value', (snap) => {
+    players = snap.val() || {};
+    document.getElementById('playerCount').textContent = Object.keys(players).length;
+  });
 
-    // 1秒後に投球開始
-    setTimeout(() => {
-        ball.active = true;
-    }, 1000);
-}
+  // 爆弾同期
+  bombsRef.on('value', (snap) => {
+    bombs = snap.val() || {};
+  });
 
-// 描画ループ
-function animate() {
-    if (!gameActive) return;
-    
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    
-    drawBackground();
-    drawStrikeZone();
-    
-    if (ball.active) {
-        updateBall();
-        drawBall();
+  // キーボード操作
+  let keys = {};
+  window.addEventListener('keydown', e => {
+    keys[e.key] = true;
+    if (e.key === ' ' || e.key === 'Spacebar') {
+      e.preventDefault();
+      placeBomb();
     }
-    
-    drawMeetCursor();
-    
-    requestAnimationFrame(animate);
-}
+  });
+  window.addEventListener('keyup', e => keys[e.key] = false);
 
-// 背景（球場イメージ）の描画
-function drawBackground() {
-    // マウンド
-    ctx.fillStyle = '#6d5339';
-    ctx.beginPath();
-    ctx.ellipse(PITCHER_X, PITCHER_Y + 10, 40, 15, 0, 0, Math.PI * 2);
-    ctx.fill();
-    
-    // ピッチャープレート
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(PITCHER_X - 15, PITCHER_Y + 5, 30, 4);
-
-    // バッターボックスライン（簡易）
-    ctx.strokeStyle = 'rgba(255,255,255,0.3)';
-    ctx.lineWidth = 3;
-    ctx.strokeRect(ZONE_X - 60, ZONE_Y - 20, 50, ZONE_H + 40); // 左打席
-    ctx.strokeRect(ZONE_X + ZONE_W + 10, ZONE_Y - 20, 50, ZONE_H + 40); // 右打席
-}
-
-// プロスピ風ストライクゾーンの描画
-function drawStrikeZone() {
-    // 外枠
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
-    ctx.lineWidth = 2;
-    ctx.strokeRect(ZONE_X, ZONE_Y, ZONE_W, ZONE_H);
-    
-    // 内枠（プロスピの9分割ラインを薄く描画）
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
-    ctx.lineWidth = 1;
-    // 縦2本
-    ctx.beginPath();
-    ctx.moveTo(ZONE_X + ZONE_W/3, ZONE_Y); ctx.lineTo(ZONE_X + ZONE_W/3, ZONE_Y + ZONE_H);
-    ctx.moveTo(ZONE_X + (ZONE_W/3)*2, ZONE_Y); ctx.lineTo(ZONE_X + (ZONE_W/3)*2, ZONE_Y + ZONE_H);
-    // 横2本
-    ctx.moveTo(ZONE_X, ZONE_Y + ZONE_H/3); ctx.lineTo(ZONE_X + ZONE_W, ZONE_Y + ZONE_H/3);
-    ctx.moveTo(ZONE_X, ZONE_Y + (ZONE_H/3)*2); ctx.lineTo(ZONE_X + ZONE_W, ZONE_Y + (ZONE_H/3)*2);
-    ctx.stroke();
-}
-
-// ボールの物理挙動（プロスピの球種変化をシミュレート）
-function updateBall() {
-    // 球速に応じたフレームごとの進行度（ストレートは速く、フォークは後半失速など）
-    let speedFactor = (ball.actualSpeed / 150) * 0.016; 
-    ball.progress += speedFactor;
-    
-    if (ball.progress >= 1.0) {
-        // スイングされずにミットに到達した場合（ストライク/ボール判定だが今回は一律見送り三振/アウト扱い）
-        ball.active = false;
-        showResult('STRIKE', 'res-strike');
-        streak = 0;
-        document.getElementById('streak').innerText = streak;
-        setTimeout(nextPitch, 2000);
-        return;
-    }
-
-    // 遠近感を出すためのサイズ変更（指数関数的に手前で急激に大きくなる）
-    ball.size = 3 + Math.pow(ball.progress, 3) * 26;
-
-    // 球種ごとの変化球ロジック
-    let currentX = PITCHER_X + (ball.targetX - PITCHER_X) * ball.progress;
-    let currentY = PITCHER_Y + (ball.targetY - PITCHER_Y) * ball.progress;
-
-    if (ball.currentPitch.type === 'slider') {
-        // 後半にかけて急激に右（打者から見て左）へ曲がる
-        if (ball.progress > 0.4) {
-            currentX -= Math.pow((ball.progress - 0.4), 2) * 160;
-        }
-    } else if (ball.currentPitch.type === 'fork') {
-        // 手前で急激に落ちる
-        if (ball.progress > 0.5) {
-            currentY += Math.pow((ball.progress - 0.5), 2) * 180;
-        }
-    } else if (ball.currentPitch.type === 'cut') {
-        // 手元でわずかに小さく曲がる
-        if (ball.progress > 0.7) {
-            currentX -= Math.pow((ball.progress - 0.7), 2) * 80;
-        }
-    }
-
-    ball.x = currentX;
-    ball.y = currentY;
-}
-
-// ボールの描画（リアルな影付き）
-function drawBall() {
-    ctx.save();
-    // ボールの影
-    ctx.fillStyle = 'rgba(0,0,0,0.3)';
-    ctx.beginPath();
-    ctx.arc(ball.x + ball.size*0.2, ball.y + ball.size*0.3, ball.size, 0, Math.PI*2);
-    ctx.fill();
-
-    // ボール本体
-    ctx.fillStyle = '#ffffff';
-    ctx.beginPath();
-    ctx.arc(ball.x, ball.y, ball.size, 0, Math.PI*2);
-    ctx.fill();
-
-    // プロスピ風の「回転シーム（縫い目）」の簡易表現（球種色を少し混ぜる）
-    ctx.strokeStyle = ball.currentPitch.color;
-    ctx.lineWidth = ball.size > 8 ? 2 : 1;
-    ctx.beginPath();
-    ctx.arc(ball.x, ball.y, ball.size * 0.7, 0.2 * Math.PI, 0.8 * Math.PI);
-    ctx.stroke();
-    ctx.restore();
-}
-
-// プロスピ風「ミートカーソル」の描画
-function drawMeetCursor() {
-    ctx.save();
-    
-    // 黄色の半透明ミートエリア
-    ctx.fillStyle = 'rgba(230, 180, 30, 0.25)';
-    ctx.strokeStyle = 'rgba(230, 180, 30, 0.7)';
-    ctx.lineWidth = 2;
-    
-    // 通常ミートカーソル（横長楕円形）
-    const cursorW = 45;
-    const cursorH = 30;
-    
-    ctx.beginPath();
-    ctx.ellipse(mouseX, mouseY, cursorW, cursorH, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.stroke();
-    
-    // 【プロスピのキモ】中心の「芯（ジャストミートエリア）」
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
-    ctx.beginPath();
-    ctx.arc(mouseX, mouseY, 6, 0, Math.PI * 2);
-    ctx.fill();
-    
-    // ガイド用十字ライン
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(mouseX - 15, mouseY); ctx.lineTo(mouseX + 15, mouseY);
-    ctx.moveTo(mouseX, mouseY - 10); ctx.lineTo(mouseX, mouseY + 10);
-    ctx.stroke();
-    
-    ctx.restore();
-}
-
-// スイングの判定ロジック（ここが一番本格的な部分）
-function evaluateSwing() {
-    ball.hasSwung = true;
-    ball.active = false;
-
-    // 1. タイミング判定 (ボールの進捗度が 0.88 ~ 0.96 の間がジャストタイミング)
-    // 150km/h超の球に対してコンマ数秒のシビアな判定
-    const t = ball.progress;
-    let timingScore = 0; // 0が完璧、離れるほど悪い
-    
-    if (t >= 0.90 && t <= 0.95) {
-        timingScore = Math.abs(t - 0.925); // 最高のタイミング
+  // 簡易タッチ操作（スマホ）
+  let touchStartX, touchStartY;
+  canvas.addEventListener('touchstart', e => {
+    touchStartX = e.touches[0].clientX;
+    touchStartY = e.touches[0].clientY;
+  });
+  canvas.addEventListener('touchend', e => {
+    const touchEndX = e.changedTouches[0].clientX;
+    const touchEndY = e.changedTouches[0].clientY;
+    const dx = touchEndX - touchStartX;
+    const dy = touchEndY - touchStartY;
+    if (Math.abs(dx) > 30 || Math.abs(dy) > 30) {
+      if (Math.abs(dx) > Math.abs(dy)) {
+        movePlayer(dx > 0 ? 1 : -1, 0);
+      } else {
+        movePlayer(0, dy > 0 ? 1 : -1);
+      }
     } else {
-        // 完全なタイミング外れ
-        showResult('STRIKE (空振り)', 'res-strike');
-        streak = 0;
-        document.getElementById('streak').innerText = streak;
-        setTimeout(nextPitch, 2000);
-        return;
+      placeBomb();
     }
+  });
 
-    // 2. 位置（ミート）判定
-    const distX = Math.abs(ball.x - mouseX);
-    const distY = Math.abs(ball.y - mouseY);
-
-    // 通常ミートエリア（楕円内）に入っているか判定
-    const inCursor = (Math.pow(distX, 2) / Math.pow(45, 2)) + (Math.pow(distY, 2) / Math.pow(30, 2)) <= 1.0;
-    // 芯（ジャストミート）に入っているか判定
-    const inCenter = distX <= 8 && distY <= 8;
-
-    if (!inCursor) {
-        showResult('STRIKE (空振り)', 'res-strike');
-        streak = 0;
-    } else if (inCenter && timingScore < 0.015) {
-        // 芯 ＆ タイミング完璧 ＝ ホームラン
-        showResult('HOMERUN!!', 'res-homerun');
-        score += 1000 + (streak * 200);
-        streak++;
-    } else if (inCenter || (inCursor && timingScore < 0.01)) {
-        // どちらかが優秀 ＝ ヒット
-        showResult('HIT!', 'res-hit');
-        score += 500;
-        streak++;
-    } else if (timingScore > 0.02) {
-        // タイミングが少しズレた ＝ ファウル
-        showResult('FOUL', 'res-foul');
-    } else {
-        // カーソルの端っこ ＝ 凡打（アウト）
-        showResult('OUT (凡打)', 'res-out');
-        streak = 0;
-    }
-
-    document.getElementById('score').innerText = score;
-    document.getElementById('streak').innerText = streak;
-    
-    // 2.5秒後に次の球へ
-    setTimeout(nextPitch, 2500);
+  gameLoop();
 }
 
-// 画面中央にド派手な判定を出す関数
-function showResult(text, className) {
-    const resDisp = document.getElementById('result-display');
-    resDisp.innerText = text;
-    resDisp.className = 'show ' + className;
+// 移動（簡易版：1タイル移動）
+function movePlayer(dx, dy) {
+  const me = players[myPlayerId];
+  if (!me || !me.alive) return;
+
+  const newX = Math.round(me.x + dx);
+  const newY = Math.round(me.y + dy);
+
+  if (newX < 0 || newX >= COLS || newY < 0 || newY >= ROWS) return;
+  if (map[newY][newX] === 1) return; // 壁
+
+  // 他のプレイヤーとの簡易衝突（省略可）
+  db.ref(`rooms/${roomId}/players/${myPlayerId}`).update({
+    x: newX,
+    y: newY,
+    direction: dx === 1 ? "right" : dx === -1 ? "left" : dy === 1 ? "down" : "up"
+  });
 }
+
+// 爆弾設置
+function placeBomb() {
+  const me = players[myPlayerId];
+  if (!me || !me.alive) return;
+
+  const bombId = "b_" + Date.now();
+  db.ref(`rooms/${roomId}/bombs/${bombId}`).set({
+    x: Math.round(me.x),
+    y: Math.round(me.y),
+    owner: myPlayerId,
+    time: Date.now(),
+    power: 2
+  });
+
+  // 自動爆発（2.5秒後）
+  setTimeout(() => {
+    explodeBomb(bombId);
+  }, 2500);
+}
+
+function explodeBomb(bombId) {
+  const bomb = bombs[bombId];
+  if (!bomb) return;
+
+  db.ref(`rooms/${roomId}/bombs/${bombId}`).remove();
+
+  const {x, y, power} = bomb;
+  explosions.push({x, y, time: Date.now(), power});
+
+  // 簡易爆風処理（上下左右）
+  const dirs = [[0,0], [1,0], [-1,0], [0,1], [0,-1]];
+  dirs.forEach(([dx, dy]) => {
+    for (let i = 1; i <= power; i++) {
+      const ex = x + dx * i;
+      const ey = y + dy * i;
+      if (ex < 0 || ex >= COLS || ey < 0 || ey >= ROWS) break;
+      if (map[ey][ex] === 1) break;
+      if (map[ey][ex] === 2) {
+        map[ey][ex] = 0; // 破壊
+        break;
+      }
+      // プレイヤー死亡判定（簡易）
+      Object.keys(players).forEach(pid => {
+        const p = players[pid];
+        if (p && Math.round(p.x) === ex && Math.round(p.y) === ey) {
+          if (pid === myPlayerId) {
+            alert("💥 やられた！");
+          }
+          db.ref(`rooms/${roomId}/players/${pid}/alive`).set(false);
+        }
+      });
+    }
+  });
+
+  setTimeout(() => {
+    explosions = explosions.filter(e => e.time !== Date.now() - 800);
+  }, 800);
+}
+
+// ====================== 描画 ======================
+function draw() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  // マップ描画
+  for (let y = 0; y < ROWS; y++) {
+    for (let x = 0; x < COLS; x++) {
+      const px = x * TILE_SIZE;
+      const py = y * TILE_SIZE;
+      if (map[y][x] === 1) {
+        ctx.fillStyle = '#555';
+        ctx.fillRect(px, py, TILE_SIZE, TILE_SIZE);
+      } else if (map[y][x] === 2) {
+        ctx.fillStyle = '#c84';
+        ctx.fillRect(px, py, TILE_SIZE, TILE_SIZE);
+      } else {
+        ctx.fillStyle = '#222';
+        ctx.fillRect(px, py, TILE_SIZE, TILE_SIZE);
+      }
+    }
+  }
+
+  // プレイヤー描画
+  Object.values(players).forEach(p => {
+    if (!p.alive) return;
+    ctx.fillStyle = p.color || '#0f0';
+    ctx.fillRect(p.x * TILE_SIZE + 5, p.y * TILE_SIZE + 5, TILE_SIZE - 10, TILE_SIZE - 10);
+    ctx.fillStyle = '#000';
+    ctx.font = '12px Arial';
+    ctx.fillText(p.name.slice(0,6), p.x * TILE_SIZE + 8, p.y * TILE_SIZE + 20);
+  });
+
+  // 爆弾描画
+  Object.values(bombs).forEach(b => {
+    ctx.fillStyle = '#f80';
+    ctx.beginPath();
+    ctx.arc(b.x * TILE_SIZE + TILE_SIZE/2, b.y * TILE_SIZE + TILE_SIZE/2, 15, 0, Math.PI*2);
+    ctx.fill();
+  });
+
+  // 爆風描画
+  ctx.fillStyle = 'orange';
+  explosions.forEach(e => {
+    ctx.globalAlpha = 0.7;
+    ctx.fillRect(e.x * TILE_SIZE, e.y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+  });
+  ctx.globalAlpha = 1;
+}
+
+// ====================== ゲームループ ======================
+let lastTime = 0;
+function gameLoop() {
+  const now = Date.now();
+  if (now - lastTime > 100) {  // 移動間隔制御
+    if (keys['ArrowRight'] || keys['d']) movePlayer(1, 0);
+    if (keys['ArrowLeft'] || keys['a']) movePlayer(-1, 0);
+    if (keys['ArrowDown'] || keys['s']) movePlayer(0, 1);
+    if (keys['ArrowUp'] || keys['w']) movePlayer(0, -1);
+    lastTime = now;
+  }
+
+  draw();
+  requestAnimationFrame(gameLoop);
+}
+
+// 自動リロード防止（開発用）
+console.log("%cMulti Bomberman 起動！ スペースキーで爆弾", "color: lime; font-size:16px");
 </script>
 
 </body>
