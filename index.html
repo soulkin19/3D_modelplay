@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>匿名 1v1 チャットアプリ</title>
+    <title>Firestore 独自認証 1v1チャット</title>
     <style>
         body { font-family: sans-serif; margin: 0; background: #f0f2f5; display: flex; justify-content: center; padding: 20px; }
         .container { width: 100%; max-width: 800px; background: white; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); overflow: hidden; padding: 20px;}
@@ -11,9 +11,9 @@
         
         /* 認証画面 */
         .auth-form { max-width: 300px; margin: 0 auto; text-align: center; }
-        .auth-form input { width: 100%; margin-bottom: 15px; padding: 10px; box-sizing: border-box; border: 1px solid #ddd; border-radius: 4px;}
+        .auth-form input { width: 100%; margin-bottom: 10px; padding: 10px; box-sizing: border-box; border: 1px solid #ddd; border-radius: 4px;}
         .auth-form button { width: 100%; padding: 12px; background: #0084ff; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 16px;}
-        .auth-form button:hover { background: #0073e6; }
+        .toggle-auth { color: #0084ff; cursor: pointer; text-decoration: underline; font-size: 0.9em; margin-top: 10px; }
 
         /* メイン画面（2カラム） */
         .main-layout { display: flex; height: 500px; }
@@ -47,21 +47,22 @@
 
 <div class="container">
     <div id="auth-section" class="auth-form">
-        <h2>チャットに参加</h2>
-        <p style="font-size: 0.9em; color: #666;">名前を決めるだけで始められます</p>
-        <input type="text" id="username-input" placeholder="あなたの表示名（例: 太郎）">
-        <button id="auth-btn">参加する</button>
+        <h2 id="auth-title">ログイン</h2>
+        <input type="text" id="auth-username" placeholder="ユーザー名">
+        <input type="password" id="auth-password" placeholder="パスワード">
+        <button id="auth-btn">ログイン</button>
+        <p class="toggle-auth" id="toggle-auth-btn">アカウント新規登録はこちら</p>
     </div>
 
     <div id="main-section" class="hidden">
         <div id="header-info">
             <div>ログイン中: <strong id="my-name-display"></strong></div>
-            <button id="logout-btn" style="padding: 5px 10px; border: 1px solid #ccc; background: white; cursor: pointer; border-radius: 4px;">退出（ログアウト）</button>
+            <button id="logout-btn" style="padding: 5px 10px; border: 1px solid #ccc; background: white; cursor: pointer; border-radius: 4px;">ログアウト</button>
         </div>
 
         <div class="main-layout">
             <div class="user-list-area">
-                <h3 style="margin-top: 0; font-size: 1em;">オンラインのユーザー</h3>
+                <h3 style="margin-top: 0; font-size: 1em;">登録ユーザー一覧</h3>
                 <div id="user-list"></div>
             </div>
 
@@ -79,9 +80,8 @@
 
 <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-    import { getDatabase, ref, push, onChildAdded, onValue, set, off } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
-    // signInAnonymously（匿名認証）をインポート
-    import { getAuth, signInAnonymously, onAuthStateChanged, signOut, updateProfile } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+    // Firestore用のモジュールをインポート
+    import { getFirestore, doc, setDoc, getDoc, collection, addDoc, onSnapshot, query, orderBy } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
     const firebaseConfig = {
         apiKey: "AIzaSyCwhHspaG94goiCIjVj3h-Un5pBK3JTjMU",
@@ -94,14 +94,16 @@
     };
 
     const app = initializeApp(firebaseConfig);
-    const db = getDatabase(app);
-    const auth = getAuth(app);
+    const db = getFirestore(app); // Firestoreを初期化
 
     // UI要素
     const authSection = document.getElementById('auth-section');
     const mainSection = document.getElementById('main-section');
-    const usernameInput = document.getElementById('username-input');
+    const authTitle = document.getElementById('auth-title');
+    const authUsernameInput = document.getElementById('auth-username');
+    const authPasswordInput = document.getElementById('auth-password');
     const authBtn = document.getElementById('auth-btn');
+    const toggleAuthBtn = document.getElementById('toggle-auth-btn');
     
     const myNameDisplay = document.getElementById('my-name-display');
     const logoutBtn = document.getElementById('logout-btn');
@@ -112,98 +114,121 @@
     const messageInput = document.getElementById('message-input');
     const sendBtn = document.getElementById('send-btn');
 
-    let currentUser = null;
-    let currentChatRef = null;
-    let selectedUserId = null;
-    let pendingName = ""; // ログイン処理中に名前を一時保持する変数
+    let myUsername = ""; // ログイン中のユーザー名
+    let isLoginMode = true;
+    let unsubscribeChat = null; // チャット監視の解除用関数
+    let selectedUser = "";
 
-    // --- 匿名ログイン処理 ---
-    authBtn.addEventListener('click', () => {
-        pendingName = usernameInput.value.trim();
-        if (!pendingName) return alert('表示名を入力してください');
-        
-        // 匿名でサインイン
-        signInAnonymously(auth).catch(e => alert('ログインエラー: ' + e.message));
-    });
-
-    // ログアウト処理
-    logoutBtn.addEventListener('click', () => signOut(auth));
-
-    // --- 認証状態の監視 ---
-    onAuthStateChanged(auth, (user) => {
-        if (user) {
-            currentUser = user;
-            authSection.classList.add('hidden');
-            mainSection.classList.remove('hidden');
-
-            // 新規参加時（pendingNameがある場合）にプロフィールとDBを更新
-            if (pendingName) {
-                updateProfile(user, { displayName: pendingName }).then(() => {
-                    set(ref(db, 'users/' + user.uid), { username: pendingName });
-                    myNameDisplay.innerText = pendingName;
-                    pendingName = ""; // 処理が終わったらクリア
-                });
-            } else {
-                // ページ更新などで既にログイン状態だった場合
-                const displayName = user.displayName || "匿名ユーザー";
-                myNameDisplay.innerText = displayName;
-                // 万が一DBに存在しない場合に備えて上書き
-                set(ref(db, 'users/' + user.uid), { username: displayName });
-            }
-
-            loadUserList();
+    // --- ログイン/新規登録 モード切り替え ---
+    toggleAuthBtn.addEventListener('click', () => {
+        isLoginMode = !isLoginMode;
+        if (isLoginMode) {
+            authTitle.innerText = 'ログイン';
+            authBtn.innerText = 'ログイン';
+            toggleAuthBtn.innerText = 'アカウント新規登録はこちら';
         } else {
-            // ログアウト状態
-            currentUser = null;
-            authSection.classList.remove('hidden');
-            mainSection.classList.add('hidden');
-            userListDiv.innerHTML = '';
-            messagesDiv.innerHTML = '';
-            chatInputs.classList.add('hidden');
-            chatTitle.innerText = 'ユーザーを選択してください';
-            usernameInput.value = '';
-            if (currentChatRef) off(currentChatRef);
+            authTitle.innerText = 'アカウント新規登録';
+            authBtn.innerText = '登録して開始';
+            toggleAuthBtn.innerText = 'ログインはこちら';
         }
     });
 
+    // --- 認証ボタンクリック処理 ---
+    authBtn.addEventListener('click', async () => {
+        const username = authUsernameInput.value.trim();
+        const password = authPasswordInput.value.trim();
+
+        if (!username || !password) return alert('ユーザー名とパスワードを入力してください');
+
+        const userDocRef = doc(db, "users", username);
+
+        if (isLoginMode) {
+            // 【ログイン処理】
+            const userDoc = await getDoc(userDocRef);
+            if (userDoc.exists() && userDoc.data().password === password) {
+                loginSuccess(username);
+            } else {
+                alert('ユーザー名またはパスワードが正しくありません。');
+            }
+        } else {
+            // 【新規登録処理】
+            const userDoc = await getDoc(userDocRef);
+            if (userDoc.exists()) {
+                alert('このユーザー名は既に使われています。');
+            } else {
+                // 新規ユーザーをFirestoreに登録
+                await setDoc(userDocRef, { password: password });
+                alert('登録が完了しました！ログインします。');
+                loginSuccess(username);
+            }
+        }
+    });
+
+    // ログアウト処理
+    logoutBtn.addEventListener('click', () => {
+        myUsername = "";
+        authSection.classList.remove('hidden');
+        mainSection.classList.add('hidden');
+        authUsernameInput.value = '';
+        authPasswordInput.value = '';
+        if (unsubscribeChat) unsubscribeChat();
+    });
+
+    // ログイン成功時の画面切り替え
+    function loginSuccess(username) {
+        myUsername = username;
+        myNameDisplay.innerText = username;
+        authSection.classList.add('hidden');
+        mainSection.classList.remove('hidden');
+        loadUserList();
+    }
+
     // --- ユーザー一覧の取得 ---
     function loadUserList() {
-        const usersRef = ref(db, 'users');
-        onValue(usersRef, (snapshot) => {
+        // 全ユーザーを監視してリスト化
+        onSnapshot(collection(db, "users"), (snapshot) => {
             userListDiv.innerHTML = '';
-            snapshot.forEach((childSnapshot) => {
-                const uid = childSnapshot.key;
-                const data = childSnapshot.val();
-                
-                // 自分自身はリストから除外
-                if (uid === currentUser.uid) return;
+            snapshot.forEach((doc) => {
+                const username = doc.id;
+                if (username === myUsername) return; // 自分は除外
 
                 const div = document.createElement('div');
                 div.className = 'user-item';
-                div.innerText = data.username;
-                div.onclick = () => openChat(uid, data.username, div);
+                div.innerText = username;
+                div.onclick = () => openChat(username, div);
                 userListDiv.appendChild(div);
             });
         });
     }
 
     // --- 1v1 チャットを開く ---
-    function openChat(targetUid, targetName, element) {
+    function openChat(targetUsername, element) {
         document.querySelectorAll('.user-item').forEach(el => el.classList.remove('active'));
         element.classList.add('active');
 
-        selectedUserId = targetUid;
-        chatTitle.innerText = `${targetName} とのチャット`;
+        selectedUser = targetUsername;
+        chatTitle.innerText = `${targetUsername} とのチャット`;
         chatInputs.classList.remove('hidden');
         messagesDiv.innerHTML = '';
 
-        if (currentChatRef) off(currentChatRef);
+        if (unsubscribeChat) unsubscribeChat(); // 以前のルームの監視を止める
 
-        // 2人のUIDを結合してルームIDを作成
-        const roomId = [currentUser.uid, targetUid].sort().join('_');
-        currentChatRef = ref(db, 'chats/' + roomId);
+        // 2人のユーザー名をアルファベット順に並び替えてルームIDを作成
+        const roomId = [myUsername, targetUsername].sort().join('_');
+        
+        // メッセージを時間順に並び替えて取得
+        const msgQuery = query(
+            collection(db, "chats", roomId, "messages"),
+            orderBy("timestamp", "asc")
+        );
 
-        onChildAdded(currentChatRef, (data) => displayMessage(data.val()));
+        // リアルタイムにメッセージを監視
+        unsubscribeChat = onSnapshot(msgQuery, (snapshot) => {
+            messagesDiv.innerHTML = ''; // 一旦クリアして再描画
+            snapshot.forEach((doc) => {
+                displayMessage(doc.data());
+            });
+        });
     }
 
     // --- メッセージ送信 ---
@@ -212,30 +237,34 @@
         if (e.key === 'Enter') sendMessage();
     });
 
-    function sendMessage() {
+    async function sendMessage() {
         const text = messageInput.value.trim();
-        if (!text || !selectedUserId) return;
+        if (!text || !selectedUser) return;
 
-        push(currentChatRef, {
-            senderId: currentUser.uid,
-            senderName: currentUser.displayName || "匿名ユーザー",
+        const roomId = [myUsername, selectedUser].sort().join('_');
+        
+        // chats -> ルームID -> messages サブコレクションにデータを追加
+        await addDoc(collection(db, "chats", roomId, "messages"), {
+            sender: myUsername,
             text: text,
             timestamp: Date.now()
         });
+
         messageInput.value = '';
     }
 
-    // --- メッセージ表示（メンションハイライト含む） ---
+    // --- メッセージ表示（メンション対応） ---
     function displayMessage(data) {
         const messageEl = document.createElement('div');
-        const isMe = data.senderId === currentUser.uid;
+        const isMe = data.sender === myUsername;
         messageEl.className = `message ${isMe ? 'me' : 'other'}`;
         
         let formattedText = escapeHtml(data.text);
+        // @名前 を検知してハイライト用のタグに変換
         formattedText = formattedText.replace(/@([a-zA-Z0-9_ぁ-んァ-ヶ一-龠]+)/g, '<span class="mention">@$1</span>');
 
         messageEl.innerHTML = `
-            ${!isMe ? `<div class="meta">${escapeHtml(data.senderName)}</div>` : ''}
+            ${!isMe ? `<div class="meta">${escapeHtml(data.sender)}</div>` : ''}
             <div>${formattedText}</div>
         `;
         
